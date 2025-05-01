@@ -144,25 +144,11 @@ class ConfigManager:
         else:
             # self.console.print("[dim]Global config file not found[/dim]")
             pass
-            
-        # Try project config as fallback
-        if self.project_config_path.exists():
-            try:
-                with open(self.project_config_path, "r", encoding="utf-8") as f:
-                    data = toml.load(f)
-                api_key = data.get("api_key_backup")
-                if api_key:
-                    self.console.print("[yellow]Using API key from project config (fallback)[/yellow]")
-                    return api_key.strip()
-            except Exception as e:
-                # Silently ignore project config errors here
-                pass
                 
         return None
 
     def save_api_key(self, api_key: str) -> bool:
-        """ Saves OpenRouter API key to the global config file. """
-        global_success = False
+        """ Saves OpenRouter API key to the global config file only. """
         try:
             self.global_config_dir.mkdir(parents=True, exist_ok=True)
             # Attempt to set permissions (works reliably on Unix-like systems)
@@ -182,38 +168,21 @@ class ConfigManager:
             # Print location information to confirm global storage
             self.console.print(f"[green]API Key saved globally to:[/green] [cyan]{self.global_config_path}[/cyan]")
             self.console.print("[dim]This key will be used for all nerd-prompt projects[/dim]")
-            global_success = True
-        except Exception as e:
-            self.console.print(f"[red]Error:[/red] Could not save API key to global config: {e}")
-            global_success = False
-        
-        # Always save to project config as well as a fallback
-        try:
-            project_state = self.load_project_state()
-            # Create a special section just for the API key
-            project_data = {
-                "include": project_state.default_includes,
-                "exclude": project_state.default_excludes,
-                "llms": project_state.default_llms,
-                "model_overrides": project_state.default_model_overrides,
-                "git_repo_map": project_state.git_repo_map,
-                # Add a section for the API key
-                "api_key_backup": api_key,
-            }
-            with open(self.project_config_path, "w", encoding="utf-8") as f:
-                toml.dump(project_data, f)
             
-            if not global_success:
-                self.console.print(f"[yellow]API Key saved to project config as fallback:[/yellow] [cyan]{self.project_config_path}[/cyan]")
+            # Verify the key was saved correctly by immediately reading it back
+            try:
+                with open(self.global_config_path, "r", encoding="utf-8") as f:
+                    data = toml.load(f)
+                stored_key = data.get("settings", {}).get(API_KEY_ENV_VAR)
+                if stored_key != api_key:
+                    self.console.print("[yellow]Warning: Saved key doesn't match provided key. Storage may be unreliable.[/yellow]")
+            except Exception as e:
+                self.console.print(f"[yellow]Warning: Could not verify saved key: {e}[/yellow]")
             
             return True
         except Exception as e:
-            if not global_success:
-                self.console.print(f"[red]Error:[/red] Could not save API key to project config either: {e}")
-                return False
-            else:
-                # Global save succeeded, so we're good even if project save failed
-                return True
+            self.console.print(f"[red]Error:[/red] Could not save API key to global config: {e}")
+            return False
 
     def load_gitignore_patterns(self) -> List[str]:
         """ Loads patterns from .gitignore in the project root. """
@@ -302,4 +271,12 @@ class ConfigManager:
                 self.console.print(f"[green]✓[/green] Successfully loaded API key through normal channels")
         else:
             if verbose:
-                self.console.print(f"[red]✗[/red] No API key could be loaded") 
+                self.console.print(f"[red]✗[/red] No API key could be loaded")
+
+    def set_global_api_key(self, api_key: str) -> bool:
+        """
+        Forcefully set the OpenRouter API key in global config.
+        Use this method to directly set the API key without interactive prompts.
+        Returns True if successful.
+        """
+        return self.save_api_key(api_key) 

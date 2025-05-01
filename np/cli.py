@@ -22,7 +22,7 @@ app = typer.Typer(
     name="np",
     help="nerd-prompt: Context Assembler & LLM Interaction CLI.",
     add_completion=True,
-    no_args_is_help=False, # Allow running with no args for interactive mode
+    no_args_is_help=False,
 )
 
 console = Console()

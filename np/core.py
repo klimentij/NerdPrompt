@@ -18,8 +18,15 @@ def pattern_matches_any(path: str, patterns: List[str]) -> bool:
     """
     Check if a given path matches any of the provided glob patterns.
     """
+    path = path.replace("\\", "/")  # Normalize path separators for matching
+    
     for pattern in patterns:
-        if fnmatch.fnmatch(path, pattern):
+        # Handle directory patterns (ending with /)
+        if pattern.endswith('/'):
+            if path.startswith(pattern) or path == pattern[:-1]:
+                return True
+        # Standard glob matching
+        elif fnmatch.fnmatch(path, pattern):
             return True
     return False
 

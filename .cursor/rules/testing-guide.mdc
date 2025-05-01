@@ -1,0 +1,51 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Testing Guide for NerdPrompt
+
+The test suite in [tests/](mdc:tests) covers the functionality of the NerdPrompt application.
+
+## Test Structure
+
+- Tests are organized to match the module structure of the application.
+- Most tests use pytest fixtures and mocking to isolate functionality.
+- The test configuration is defined in [pyproject.toml](mdc:pyproject.toml) under the `[tool.pytest.ini_options]` section.
+
+## Important Test Patterns
+
+### Mocking External Services
+
+- API calls to OpenRouter are mocked in [tests/test_llm_api.py](mdc:tests/test_llm_api.py).
+- Git operations are mocked in [tests/test_git_handler.py](mdc:tests/test_git_handler.py).
+- File operations are often mocked or use temporary directories.
+
+### Handling Asynchronous Operations
+
+- When testing code with asynchronous operations (like the ThreadPoolExecutor in LLMApi), be sure to:
+  - Mock `time.sleep` to prevent tests from hanging.
+  - Set up mock futures correctly to simulate completion.
+  - Use appropriate assertions for checking asynchronous results.
+
+### Model Assertions
+
+- When testing responses from the LLM API, check for the essential parts of the response rather than exact matches.
+- For file operations, verify that the correct operations were performed rather than exact content matches.
+
+## Running Tests
+
+- Run all tests with `pytest` or `python -m pytest`.
+- Run specific tests with `pytest tests/test_file.py::test_function`.
+- Add `-v` for verbose output.
+- Use the `--timeout` flag to set test timeouts, especially for tests that might hang.
+
+## Test Dependencies
+
+- pytest
+- pytest-mock
+- pytest-cov
+- pytest-asyncio
+- pytest-timeout
+
+Install these with `uv pip install` for best dependency resolution.

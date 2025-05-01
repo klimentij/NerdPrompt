@@ -1,0 +1,69 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Development Workflow
+
+This document outlines the recommended workflow for developing the NerdPrompt application.
+
+## Environment Setup
+
+1. Create a virtual environment using UV:
+   ```bash
+   uv venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+2. Install dependencies:
+   ```bash
+   uv pip install -e .
+   uv pip install pytest pytest-mock pytest-cov pytest-asyncio pytest-timeout
+   ```
+
+## Testing
+
+- Run the entire test suite:
+  ```bash
+  pytest
+  ```
+
+- Run a specific test file:
+  ```bash
+  pytest tests/test_llm_api.py
+  ```
+
+- Run a specific test:
+  ```bash
+  pytest tests/test_llm_api.py::test_process_llms
+  ```
+
+- Run with coverage:
+  ```bash
+  pytest --cov=np
+  ```
+
+## Common Issues and Solutions
+
+### Hanging Tests
+
+If tests are hanging, especially those involving asynchronous operations:
+
+1. Add timeouts to your tests: `pytest --timeout=30`
+2. Make sure any asynchronous operations in tests properly mock `time.sleep` calls
+3. Check for infinite loops in event listening code
+
+### Python Cache Files
+
+Python cache files (\_\_pycache\_\_ directories) are excluded in the [.gitignore](mdc:.gitignore) file. If you encounter strange behavior after modifying code:
+
+1. Clear cache files: `find . -name "__pycache__" -exec rm -rf {} +` (if found)
+2. Re-run tests
+
+## Project Structure
+
+The codebase follows a modular structure with clear separation of concerns. When adding new features:
+
+1. Add the core functionality to the appropriate module in [np/](mdc:np/)
+2. Add tests in the [tests/](mdc:tests/) directory
+3. Update documentation as needed

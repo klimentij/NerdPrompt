@@ -1,0 +1,30 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# NerdPrompt Project Structure
+
+NerdPrompt is a CLI tool for assembling context from various sources and sending it to LLMs.
+
+## Core Components
+
+- The main entry point is [np/__main__.py](mdc:np/__main__.py), which initializes the Typer CLI app.
+- Core CLI functionality is in [np/cli.py](mdc:np/cli.py), which defines the command-line interface.
+- The core processing logic is in [np/core.py](mdc:np/core.py), which handles assembling context and managing the workflow.
+- LLM API interaction is handled by [np/llm_api.py](mdc:np/llm_api.py), which communicates with OpenRouter.
+- Git repository handling is in [np/git_handler.py](mdc:np/git_handler.py).
+- Output generation is managed by [np/output_builder.py](mdc:np/output_builder.py).
+- Configuration management is in [np/config.py](mdc:np/config.py).
+- Interactive setup is handled by [np/interactive.py](mdc:np/interactive.py).
+- API key management is in [np/api_key.py](mdc:np/api_key.py) with backup functionality in [np/api_key_backup.py](mdc:np/api_key_backup.py).
+- Common utilities are in [np/utils.py](mdc:np/utils.py).
+
+## Tests
+
+Tests are organized in the [tests/](mdc:tests) directory with test files corresponding to each main module.
+
+## Project Configuration
+
+- [pyproject.toml](mdc:pyproject.toml) defines project metadata, dependencies, and build configuration.
+- [.gitignore](mdc:.gitignore) lists files that should be excluded from version control.

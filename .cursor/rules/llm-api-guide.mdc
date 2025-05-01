@@ -1,0 +1,41 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# LLM API Implementation Guide
+
+The [np/llm_api.py](mdc:np/llm_api.py) module handles communication with OpenRouter's API for accessing various LLM models.
+
+## Key Components
+
+- `LLMApi` class manages the interaction with OpenRouter's API, handling:
+  - API key management
+  - Request construction
+  - Response parsing
+  - Cost and token usage tracking
+  - Parallel processing of multiple model requests
+
+- `ModelStatus` class tracks the status of individual model requests, with states like:
+  - "Waiting..."
+  - "Sending..."
+  - "Done"
+  - "Error"
+  - "Manual Input" (for non-API models)
+
+## Important Implementation Details
+
+- The `process_llms` method uses `ThreadPoolExecutor` for parallel processing.
+- A `time.sleep(0.1)` call in the status monitoring loop prevents busy-waiting.
+- The module uses a locking mechanism to safely update shared state from multiple threads.
+- API responses are parsed to extract token counts, costs, and model information.
+- Both newer OpenRouter response formats and legacy formats are supported.
+- Free models (with ":free" suffix) are handled differently for cost calculations.
+
+## Testing Considerations
+
+The [tests/test_llm_api.py](mdc:tests/test_llm_api.py) file includes tests for the LLM API functionality.
+
+- When testing the `process_llms` method, the `time.sleep` call should be mocked to prevent tests from hanging.
+- Mock futures should be properly set up with `.done()` returning `True` to exit the wait loop.
+- The model statuses should be marked as complete after submission for proper test behavior.

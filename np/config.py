@@ -123,17 +123,26 @@ class ConfigManager:
         load_dotenv() # Load .env file if present in CWD or parent dirs
         api_key = os.getenv(API_KEY_ENV_VAR)
         if api_key:
+            # self.console.print("[dim]Using API key from environment variable[/dim]")
             return api_key.strip()
 
+        # self.console.print(f"[dim]Looking for API key in global config: {self.global_config_path}[/dim]")
         if self.global_config_path.exists():
             try:
                 with open(self.global_config_path, "r", encoding="utf-8") as f:
                     data = toml.load(f)
                 api_key = data.get("settings", {}).get(API_KEY_ENV_VAR)
                 if api_key:
+                    # self.console.print("[dim]Found API key in global config[/dim]")
                     return api_key.strip()
+                else:
+                    # self.console.print("[dim]No API key in global config (key exists but empty)[/dim]")
+                    pass
             except Exception as e:
                 self.console.print(f"[yellow]Warning:[/yellow] Could not load global config '{self.global_config_path}': {e}")
+        else:
+            # self.console.print("[dim]Global config file not found[/dim]")
+            pass
         return None
 
     def save_api_key(self, api_key: str) -> bool:
@@ -142,9 +151,9 @@ class ConfigManager:
             self.global_config_dir.mkdir(parents=True, exist_ok=True)
             # Attempt to set permissions (works reliably on Unix-like systems)
             try:
-                 os.chmod(self.global_config_dir, 0o700)
+                os.chmod(self.global_config_dir, 0o700)
             except OSError:
-                 pass # Ignore if chmod fails (e.g., on Windows)
+                pass # Ignore if chmod fails (e.g., on Windows)
 
             data = {"settings": {API_KEY_ENV_VAR: api_key}}
             with open(self.global_config_path, "w", encoding="utf-8") as f:
@@ -153,6 +162,10 @@ class ConfigManager:
                 os.chmod(self.global_config_path, 0o600)
             except OSError:
                 pass # Ignore if chmod fails
+            
+            # Print location information to confirm global storage
+            self.console.print(f"[green]API Key saved globally to:[/green] [cyan]{self.global_config_path}[/cyan]")
+            self.console.print("[dim]This key will be used for all nerd-prompt projects[/dim]")
             return True
         except Exception as e:
             self.console.print(f"[red]Error:[/red] Could not save API key to '{self.global_config_path}': {e}")

@@ -170,7 +170,7 @@ def run(
             ).ask()
             if new_api_key:
                 if config_manager.save_api_key(new_api_key):
-                     console.print("[green]API Key saved globally.[/green]")
+                     # Message about global storage is now in config_manager.save_api_key
                      run_config.api_key = new_api_key
                 else:
                      console.print("[red]Failed to save API key. Exiting.[/red]")
@@ -208,10 +208,8 @@ def run(
     )
 
     # Need to set the correct task_dir_path on llm_api before calling process_llms
-    # This happens inside core_processor.run() after output_builder creates the dir.
-    # We might need to refactor how llm_api gets the path or pass it during the call.
-    # Let's assume core_processor handles this coordination.
-    # A cleaner way might be for llm_api.process_llms to accept task_dir_path as an argument.
+    # This happens inside core_processor.run() after output_builder creates the task directory.
+    # task_dir_path is initialized to Path(".") here and updated in CoreProcessor.run()
 
     try:
         core_processor.run()

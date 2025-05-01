@@ -159,7 +159,7 @@ class InteractiveSetup:
             ).ask()
             if new_api_key:
                  if self.config_manager.save_api_key(new_api_key):
-                     self.console.print("[green]API Key saved globally.[/green]")
+                     # Feedback about saving global key is now in config_manager.save_api_key()
                      self.run_config.api_key = new_api_key # Use the newly entered key for this run
                  else:
                      self.console.print("[red]Failed to save API key. Using existing key if available.[/red]")

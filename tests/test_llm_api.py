@@ -170,7 +170,7 @@ def test_send_request_free_model(mock_post, mocker):
     assert api._model_status[model_name].status == "Done"
     assert "Response from free model" in api._model_status[model_name].result_content
     
-    # Verify cost was zero
+    # Verify cost was zero because it's a free model regardless of tokens
     assert api._model_status[model_name].cost == 0
     
     # Verify token counts and model info were added to the response
@@ -349,8 +349,8 @@ def test_send_request_with_dict_usage(mock_post, mocker):
     assert api._model_status[model_name].status == "Done"
     assert "Response with dict usage" in api._model_status[model_name].result_content
     
-    # Verify cost used the fallback calculation for dictionary usage
-    # With 100 total tokens, estimated cost should be 0.0001
+    # Verify cost used the fallback calculation for dictionary usage, but only if not a free model
+    # For mistral-7b-instruct which is not free, tokens=100 should give estimated cost
     estimated_cost = 100 * 0.000001
     assert api._model_status[model_name].cost == estimated_cost
     

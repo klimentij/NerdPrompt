@@ -142,8 +142,10 @@ class LLMApi:
                 # If usage is a number, use it directly as the cost
                 cost = float(usage_value) if usage_value else 0
             
-            # If usage is not directly reported (0 or None), use a simple estimate based on tokens
-            if cost == 0 and total_tokens:
+            # Only apply token-based cost estimate if no usage provided AND it's not a free model
+            # We check model name or free indicator from API response
+            is_free_model = "free" in model_name.lower() or model_name.endswith(":free") or cost == 0
+            if cost == 0 and total_tokens and not is_free_model:
                 # This is just an estimate - actual costs vary by model
                 cost = total_tokens * 0.000001  # $0.000001 per token as placeholder
 

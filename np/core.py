@@ -263,6 +263,9 @@ This section contains the primary instructions and current task to follow.
             llm_names=self.config.llms
         )
 
+        # Update the LLMApi instance with the correct task directory path
+        self.llm_api.task_dir_path = task_dir_path
+
         # 6. Process LLMs (if any)
         if self.config.llms:
             total_cost = self.llm_api.process_llms(

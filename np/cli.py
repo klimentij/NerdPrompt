@@ -171,8 +171,16 @@ def run(
             ).ask()
             if new_api_key:
                 if config_manager.save_api_key(new_api_key):
-                     # Message about global storage is now in config_manager.save_api_key
-                     run_config.api_key = new_api_key
+                     # Verify the key was saved properly by reading it back
+                     verified_key = config_manager.load_api_key()
+                     if verified_key == new_api_key:
+                         console.print("[green]✅ API Key verified and saved correctly[/green]")
+                         run_config.api_key = new_api_key
+                     else:
+                         console.print("[red]⚠️ Warning: Saved API key doesn't match what was entered[/red]")
+                         console.print(f"[yellow]Setting key for current run only. Please check permissions on {config_manager.global_config_path}[/yellow]")
+                         # Use the key for this run anyway
+                         run_config.api_key = new_api_key
                 else:
                      console.print("[red]Failed to save API key. Exiting.[/red]")
                      raise typer.Exit(code=1)

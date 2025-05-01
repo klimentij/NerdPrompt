@@ -159,11 +159,20 @@ class InteractiveSetup:
             ).ask()
             if new_api_key:
                  if self.config_manager.save_api_key(new_api_key):
-                     # Feedback about saving global key is now in config_manager.save_api_key()
-                     self.run_config.api_key = new_api_key # Use the newly entered key for this run
+                     # Verify the key was saved properly by reading it back
+                     verified_key = self.config_manager.load_api_key()
+                     if verified_key == new_api_key:
+                         self.console.print("[green]✅ API Key verified and saved correctly[/green]")
+                         self.run_config.api_key = new_api_key
+                     else:
+                         self.console.print("[red]⚠️ Warning: Saved API key doesn't match what was entered[/red]")
+                         self.console.print(f"[yellow]Setting key for current run only. Please check permissions on {self.config_manager.global_config_path}[/yellow]")
+                         # Use the key for this run anyway
+                         self.run_config.api_key = new_api_key
                  else:
-                     self.console.print("[red]Failed to save API key. Using existing key if available.[/red]")
-                     self.run_config.api_key = self.config_manager.load_api_key() # Fallback
+                     self.console.print("[red]Failed to save API key. Using for current run only.[/red]")
+                     # Use the key for this run only
+                     self.run_config.api_key = new_api_key
             else:
                 self.console.print("[yellow]API Key update cancelled.[/yellow]")
                 self.run_config.api_key = self.config_manager.load_api_key()

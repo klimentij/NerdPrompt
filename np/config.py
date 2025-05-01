@@ -119,13 +119,14 @@ class ConfigManager:
             self.console.print(f"[dim]Updated git repo map for '{repo_key}' -> '{folder_name}' in {self.project_config_path}[/dim]")
 
     def load_api_key(self) -> Optional[str]:
-        """ Loads OpenRouter API key from ENV var first, then global config file. """
+        """ Loads OpenRouter API key from ENV var first, then global config, then project backup. """
         load_dotenv() # Load .env file if present in CWD or parent dirs
         api_key = os.getenv(API_KEY_ENV_VAR)
         if api_key:
             # self.console.print("[dim]Using API key from environment variable[/dim]")
             return api_key.strip()
 
+        # Try global config first
         # self.console.print(f"[dim]Looking for API key in global config: {self.global_config_path}[/dim]")
         if self.global_config_path.exists():
             try:
@@ -143,10 +144,25 @@ class ConfigManager:
         else:
             # self.console.print("[dim]Global config file not found[/dim]")
             pass
+            
+        # Try project config as fallback
+        if self.project_config_path.exists():
+            try:
+                with open(self.project_config_path, "r", encoding="utf-8") as f:
+                    data = toml.load(f)
+                api_key = data.get("api_key_backup")
+                if api_key:
+                    self.console.print("[yellow]Using API key from project config (fallback)[/yellow]")
+                    return api_key.strip()
+            except Exception as e:
+                # Silently ignore project config errors here
+                pass
+                
         return None
 
     def save_api_key(self, api_key: str) -> bool:
         """ Saves OpenRouter API key to the global config file. """
+        global_success = False
         try:
             self.global_config_dir.mkdir(parents=True, exist_ok=True)
             # Attempt to set permissions (works reliably on Unix-like systems)
@@ -166,10 +182,38 @@ class ConfigManager:
             # Print location information to confirm global storage
             self.console.print(f"[green]API Key saved globally to:[/green] [cyan]{self.global_config_path}[/cyan]")
             self.console.print("[dim]This key will be used for all nerd-prompt projects[/dim]")
+            global_success = True
+        except Exception as e:
+            self.console.print(f"[red]Error:[/red] Could not save API key to global config: {e}")
+            global_success = False
+        
+        # Always save to project config as well as a fallback
+        try:
+            project_state = self.load_project_state()
+            # Create a special section just for the API key
+            project_data = {
+                "include": project_state.default_includes,
+                "exclude": project_state.default_excludes,
+                "llms": project_state.default_llms,
+                "model_overrides": project_state.default_model_overrides,
+                "git_repo_map": project_state.git_repo_map,
+                # Add a section for the API key
+                "api_key_backup": api_key,
+            }
+            with open(self.project_config_path, "w", encoding="utf-8") as f:
+                toml.dump(project_data, f)
+            
+            if not global_success:
+                self.console.print(f"[yellow]API Key saved to project config as fallback:[/yellow] [cyan]{self.project_config_path}[/cyan]")
+            
             return True
         except Exception as e:
-            self.console.print(f"[red]Error:[/red] Could not save API key to '{self.global_config_path}': {e}")
-            return False
+            if not global_success:
+                self.console.print(f"[red]Error:[/red] Could not save API key to project config either: {e}")
+                return False
+            else:
+                # Global save succeeded, so we're good even if project save failed
+                return True
 
     def load_gitignore_patterns(self) -> List[str]:
         """ Loads patterns from .gitignore in the project root. """

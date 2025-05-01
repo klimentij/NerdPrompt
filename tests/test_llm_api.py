@@ -81,11 +81,19 @@ def test_send_request_success(mock_post, mocker):
     model_name = "openai/gpt-4"
     api._model_status = {model_name: MagicMock(status="Waiting...", name=model_name)}
     
-    # Mock a successful response
+    # Mock a successful response with new OpenRouter response format
     mock_response = MagicMock()
     mock_response.json.return_value = {
+        "id": 9550412907,
+        "generation_id": "gen-1746104235-jL0R4ioHDIZiei5jXoSc",
+        "provider_name": "OpenAI",
+        "model": "gpt-4",
         "choices": [{"message": {"content": "This is a test response"}}],
-        "usage": {"total_tokens": 100, "prompt_tokens": 50, "completion_tokens": 50}
+        "tokens_prompt": 50,
+        "tokens_completion": 50,
+        "usage": 0.001,  # Explicit cost value
+        "provider_responses": [{"status": 200}],
+        "finish_reason": "stop"
     }
     mock_post.return_value = mock_response
     
@@ -100,11 +108,22 @@ def test_send_request_success(mock_post, mocker):
     
     # Verify status was updated
     assert api._model_status[model_name].status == "Done"
-    assert api._model_status[model_name].result_content == "This is a test response"
+    assert "This is a test response" in api._model_status[model_name].result_content
+    
+    # Verify cost was tracked correctly from the numeric usage value
+    assert api._model_status[model_name].cost == 0.001
+    
+    # Verify token counts and model info were added to the response
+    result_content = api._model_status[model_name].result_content
+    assert "**Prompt tokens:** 50" in result_content
+    assert "**Completion tokens:** 50" in result_content
+    assert "**Total tokens:** 100" in result_content
+    assert "**Cost:** $0.001000" in result_content
+    assert "**Model:** OpenAI/gpt-4" in result_content
     
     # Verify result was written to file
     output_builder.write_llm_response.assert_called_once_with(
-        task_dir, model_name, "This is a test response"
+        task_dir, model_name, result_content
     )
 
 
@@ -121,11 +140,19 @@ def test_send_request_free_model(mock_post, mocker):
     model_name = "qwen/qwen3-0.6b-04-28:free"
     api._model_status = {model_name: MagicMock(status="Waiting...", name=model_name)}
     
-    # Mock a successful response
+    # Mock a successful response with new OpenRouter response format for free model
     mock_response = MagicMock()
     mock_response.json.return_value = {
+        "id": 9550412907,
+        "generation_id": "gen-1746104235-jL0R4ioHDIZiei5jXoSc",
+        "provider_name": "Novita",
+        "model": "qwen3-0.6b-04-28:free",
         "choices": [{"message": {"content": "Response from free model"}}],
-        "usage": {"total_tokens": 80, "prompt_tokens": 30, "completion_tokens": 50}
+        "tokens_prompt": 30,
+        "tokens_completion": 50,
+        "usage": 0,  # Free model has zero cost
+        "provider_responses": [{"status": 200}],
+        "finish_reason": "stop"
     }
     mock_post.return_value = mock_response
     
@@ -141,11 +168,21 @@ def test_send_request_free_model(mock_post, mocker):
     
     # Verify status was updated
     assert api._model_status[model_name].status == "Done"
-    assert api._model_status[model_name].result_content == "Response from free model"
+    assert "Response from free model" in api._model_status[model_name].result_content
+    
+    # Verify cost was zero
+    assert api._model_status[model_name].cost == 0
+    
+    # Verify token counts and model info were added to the response
+    result_content = api._model_status[model_name].result_content
+    assert "**Prompt tokens:** 30" in result_content
+    assert "**Completion tokens:** 50" in result_content
+    assert "**Total tokens:** 80" in result_content
+    assert "**Model:** Novita/qwen3-0.6b-04-28:free" in result_content
     
     # Verify result was written to file
     output_builder.write_llm_response.assert_called_once_with(
-        task_dir, model_name, "Response from free model"
+        task_dir, model_name, result_content
     )
 
 
@@ -230,3 +267,97 @@ def test_no_openrouter_models():
     console.print.assert_called_with(
         "[yellow]No OpenRouter models selected. Skipping API calls.[/yellow]"
     ) 
+
+
+@patch("np.llm_api.requests.post")
+def test_send_request_legacy_format(mock_post, mocker):
+    """Test sending a request with the older OpenRouter response format."""
+    # Create a mock API instance
+    console = MagicMock()
+    output_builder = MagicMock()
+    task_dir = Path("test_dir")
+    api = LLMApi("sk-or-fakekey", output_builder, task_dir, console)
+    
+    # Setup initial status
+    model_name = "anthropic/claude-3-opus-20240229"
+    api._model_status = {model_name: MagicMock(status="Waiting...", name=model_name)}
+    
+    # Mock a successful response with older OpenRouter response format
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "id": "chatcmpl-abc123",
+        "object": "chat.completion",
+        "created": 1683138531,
+        "model": "anthropic/claude-3-opus-20240229",
+        "choices": [{"message": {"content": "Response from legacy format"}}],
+        "usage": {"prompt_tokens": 45, "completion_tokens": 62, "total_tokens": 107}
+    }
+    mock_post.return_value = mock_response
+    
+    # Call the method
+    api._send_request(model_name, "Test prompt", {})
+    
+    # Verify status was updated
+    assert api._model_status[model_name].status == "Done"
+    assert "Response from legacy format" in api._model_status[model_name].result_content
+    
+    # Verify token counts and model info were added to the response
+    result_content = api._model_status[model_name].result_content
+    assert "**Prompt tokens:** 45" in result_content
+    assert "**Completion tokens:** 62" in result_content
+    assert "**Total tokens:** 107" in result_content
+    assert "**Model:** anthropic/claude-3-opus-20240229" in result_content
+    
+    # Verify result was written to file
+    output_builder.write_llm_response.assert_called_once_with(
+        task_dir, model_name, result_content
+    )
+
+
+@patch("np.llm_api.requests.post")
+def test_send_request_with_dict_usage(mock_post, mocker):
+    """Test sending a request when usage is provided as a dictionary instead of a numeric value."""
+    # Create a mock API instance
+    console = MagicMock()
+    output_builder = MagicMock()
+    task_dir = Path("test_dir")
+    api = LLMApi("sk-or-fakekey", output_builder, task_dir, console)
+    
+    # Setup initial status
+    model_name = "mistral/mistral-7b-instruct"
+    api._model_status = {model_name: MagicMock(status="Waiting...", name=model_name)}
+    
+    # Mock a response with usage as a dictionary instead of a numeric value
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "id": "mock-12345",
+        "provider_name": "Mistral",
+        "model": "mistral-7b-instruct",
+        "choices": [{"message": {"content": "Response with dict usage"}}],
+        "tokens_prompt": 40,
+        "tokens_completion": 60,
+        "usage": {"prompt_tokens": 40, "completion_tokens": 60, "total_tokens": 100},
+        "provider_responses": [{"status": 200}],
+        "finish_reason": "stop"
+    }
+    mock_post.return_value = mock_response
+    
+    # Call the method
+    api._send_request(model_name, "Test prompt", {})
+    
+    # Verify status was updated
+    assert api._model_status[model_name].status == "Done"
+    assert "Response with dict usage" in api._model_status[model_name].result_content
+    
+    # Verify cost used the fallback calculation for dictionary usage
+    # With 100 total tokens, estimated cost should be 0.0001
+    estimated_cost = 100 * 0.000001
+    assert api._model_status[model_name].cost == estimated_cost
+    
+    # Verify token counts and model info were added to the response
+    result_content = api._model_status[model_name].result_content
+    assert "**Prompt tokens:** 40" in result_content
+    assert "**Completion tokens:** 60" in result_content
+    assert "**Total tokens:** 100" in result_content
+    assert f"**Cost:** ${estimated_cost:.6f}" in result_content
+    assert "**Model:** Mistral/mistral-7b-instruct" in result_content

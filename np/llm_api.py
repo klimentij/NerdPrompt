@@ -118,19 +118,61 @@ class LLMApi:
             if not response_content:
                  error_msg = "Error: Received empty content from API."
 
-            # --- Extract Cost (Adjust based on actual OpenRouter response structure) ---
-            # Example: Check 'usage' object if present
-            usage = data.get("usage")
-            if isinstance(usage, dict) and "total_tokens" in usage:
-                # OpenRouter cost varies; this is a placeholder.
-                # A more accurate approach might need model-specific pricing lookup.
-                # For now, we'll just indicate tokens processed if available.
-                 total_tokens = usage.get('total_tokens', 0)
-                 prompt_tokens = usage.get('prompt_tokens', 0)
-                 completion_tokens = usage.get('completion_tokens', 0)
-                 # Fake cost for demonstration if needed: cost = total_tokens * 0.000001
-                 # Storing raw usage might be better:
-                 # response_content += f"\n\n---\n*Usage: {usage}*"
+            # --- Extract Cost and Usage (Based on actual OpenRouter response structure) ---
+            # OpenRouter current response format includes direct token counts and usage info
+            tokens_completion = data.get("tokens_completion", 0)
+            tokens_prompt = data.get("tokens_prompt", 0)
+            total_tokens = tokens_prompt + tokens_completion
+
+            # For backward compatibility, also check usage object if present
+            usage = data.get("usage", {})
+            if not tokens_completion and isinstance(usage, dict):
+                tokens_prompt = usage.get("prompt_tokens", 0)
+                tokens_completion = usage.get("completion_tokens", 0) 
+                total_tokens = usage.get("total_tokens", 0) or (tokens_prompt + tokens_completion)
+
+            # Calculate actual usage cost - OpenRouter returns usage value when using paid models
+            usage_value = data.get("usage", 0)
+            # Check if usage is a dictionary and not a numeric value
+            if isinstance(usage_value, dict):
+                # If it's a dictionary, we use 0 as the cost and extract token counts from it
+                cost = 0
+                # No need to reassign usage since we already checked it's a dict
+            else:
+                # If usage is a number, use it directly as the cost
+                cost = float(usage_value) if usage_value else 0
+            
+            # If usage is not directly reported (0 or None), use a simple estimate based on tokens
+            if cost == 0 and total_tokens:
+                # This is just an estimate - actual costs vary by model
+                cost = total_tokens * 0.000001  # $0.000001 per token as placeholder
+
+            # Append model information and token usage to response if available
+            model_info = data.get("model", "")
+            if not model_info:
+                # Sometimes model info is in a different location
+                provider_name = data.get("provider_name", "")
+                model_name_from_resp = data.get("model", "")
+                if provider_name and model_name_from_resp:
+                    model_info = f"{provider_name}/{model_name_from_resp}"
+
+            # Create usage information markdown to append to response
+            usage_info = []
+            if model_info:
+                usage_info.append(f"**Model:** {model_info}")
+            if tokens_prompt:
+                usage_info.append(f"**Prompt tokens:** {tokens_prompt}")
+            if tokens_completion:
+                usage_info.append(f"**Completion tokens:** {tokens_completion}")
+            if total_tokens:
+                usage_info.append(f"**Total tokens:** {total_tokens}")
+            if cost:
+                usage_info.append(f"**Cost:** ${cost:.6f}")
+
+            # Append usage information to response if we have any
+            if usage_info and response_content:
+                usage_md = "\n\n---\n" + "\n".join(usage_info)
+                response_content += usage_md
 
 
         except requests.exceptions.Timeout:

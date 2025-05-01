@@ -1,0 +1,35 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Testing CLI and Core Integration in NerdPrompt
+
+This guide covers testing the interaction between the command-line interface ([np/cli.py](mdc:np/cli.py)) and the core processing logic ([np/core.py](mdc:np/core.py)).
+
+## Overview
+
+- The `np/cli.py` module uses `Typer` to define commands (`run`, `set-key`, `debug-api`).
+- The `run` command handles both non-interactive execution (when arguments like `--name`, `--task` are provided) and interactive setup (when no relevant arguments are given).
+- The core workflow (discovering files, assembling prompts, calling LLMs) is managed by the `CoreProcessor` class in `np/core.py`.
+- The `run` command in `np/cli.py` instantiates `CoreProcessor` and calls its `run()` method.
+
+## Testing Patterns & Common Issues
+
+### Testing the CLI (`tests/test_cli.py`)
+
+- Use `typer.testing.CliRunner` to invoke CLI commands programmatically (e.g., `runner.invoke(app, ["run", "--name", "..."])`).
+- **Mock Dependencies:** Heavily mock components like `CoreProcessor`, `InteractiveSetup`, `ConfigManager`, `LLMApi`, etc., to isolate CLI logic (argument parsing, mode selection). Use `mocker.patch`.
+- **Testing Interactive Mode Trigger:**
+    - The `run` command in `np/cli.py` checks if arguments are present to decide between interactive and non-interactive modes.
+    - When testing the trigger for interactive mode (invoking `np run` without arguments), use `runner.invoke(app, ["run"])`. Relying on `runner.invoke(app, [])` might invoke Typer's default help or cause unexpected exit codes depending on app/command `no_args_is_help` settings.
+- **Mocking `typer.Exit`:** Sometimes necessary to prevent tests from exiting prematurely, especially when testing interactive mode triggers or error conditions. `mocker.patch("typer.Exit", side_effect=lambda code=0: None)`
+
+### Testing Core Logic (`tests/test_core.py`)
+
+- **Fixtures:** Tests often use fixtures defined in `tests/conftest.py` (e.g., `mock_core_processor`) to provide a pre-configured `CoreProcessor` instance with mocked dependencies.
+- **Check Fixture State:** When using fixtures like `mock_core_processor`, ensure the initial state (like the default `RunConfig` created within the fixture) aligns with your test case. For example, if testing LLM processing, you might need to explicitly set `processor.config.llms = ["some-llm"]` in your test *after* getting the processor from the fixture, as the default fixture might not set any LLMs.
+- **Mocking Return Values:** If you mock a method whose return value is used later in the code (e.g., `processor.llm_api.process_llms` which returns a cost used in a comparison), make sure to set an appropriate `return_value` on the mock (e.g., `processor.llm_api.process_llms = mocker.MagicMock(return_value=0.0)`). Otherwise, the default `MagicMock` return value might cause type errors.
+- **Isolating Methods:** Often, you'll test `CoreProcessor` methods like `_discover_files` or `_assemble_prompt` individually by mocking other parts of the processor or its dependencies. When testing the main `run()` method, you might mock these internal methods to focus on the overall orchestration logic.
+
+By understanding these interactions and common testing patterns, you can write more robust tests for the CLI and core components.

@@ -1,7 +1,7 @@
 ---
-description:
-globs:
-alwaysApply: false
+description: 
+globs: 
+alwaysApply: true
 ---
 # Development Workflow
 
@@ -64,6 +64,6 @@ Python cache files (\_\_pycache\_\_ directories) are excluded in the [.gitignore
 
 The codebase follows a modular structure with clear separation of concerns. When adding new features:
 
-1. Add the core functionality to the appropriate module in [np/](mdc:np/)
-2. Add tests in the [tests/](mdc:tests/) directory
+1. Add the core functionality to the appropriate module in [np/](mdc:np)
+2. Add tests in the [tests/](mdc:tests) directory
 3. Update documentation as needed

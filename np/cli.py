@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple, Annotated
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 
 from .config import ConfigManager, RunConfig, ProjectState, DEFAULT_EXCLUDES
 from .interactive import InteractiveSetup
@@ -217,6 +218,35 @@ def run(
         console.print_exception(show_locals=False)
         console.print(f"[bold red]An unexpected error occurred during processing: {e}[/bold red]")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def debug_api():
+    """
+    Debug API key storage and retrieval.
+    Helps diagnose issues with OpenRouter API key persistence.
+    """
+    console.print(Panel("API Key Diagnostics", title="nerd-prompt", expand=False, style="blue"))
+    
+    project_root = Path.cwd()
+    config_manager = ConfigManager(project_root, console)
+    
+    console.print("\n[bold]API Key Storage Diagnostics:[/bold]")
+    config_manager.debug_api_key()
+    
+    console.print("\n[bold]Global Config Information:[/bold]")
+    console.print(f"Global config directory: [cyan]{config_manager.global_config_dir}[/cyan]")
+    console.print(f"Global config file: [cyan]{config_manager.global_config_path}[/cyan]")
+    
+    console.print("\n[bold]API Key Status:[/bold]")
+    api_key = config_manager.load_api_key()
+    if api_key:
+        console.print("[green]✓ API key is available for use[/green]")
+    else:
+        console.print("[red]✗ No API key available[/red]")
+        console.print("\n[bold]Recommended Actions:[/bold]")
+        console.print("Run: [cyan]np run --set-api-key[/cyan] to set a global API key")
+        console.print("or add [cyan]OPENROUTER_API_KEY=sk-or-your-key[/cyan] to your environment variables")
 
 
 # This allows running 'python -m np ...'

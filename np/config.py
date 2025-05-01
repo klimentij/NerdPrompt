@@ -184,4 +184,78 @@ class ConfigManager:
                             patterns.append(line)
             except Exception as e:
                 self.console.print(f"[yellow]Warning:[/yellow] Could not read '{gitignore_path}': {e}")
-        return patterns 
+        return patterns
+
+    def debug_api_key(self, verbose: bool = True) -> None:
+        """
+        Debug helper for API key issues.
+        Checks environment variables and global config file to diagnose API key problems.
+        """
+        if verbose:
+            self.console.print(f"[dim]Checking API key storage locations...[/dim]")
+            self.console.print(f"[dim]Environment variable: {API_KEY_ENV_VAR}[/dim]")
+            self.console.print(f"[dim]Global config path: {self.global_config_path}[/dim]")
+        
+        # Check environment
+        env_key = os.getenv(API_KEY_ENV_VAR)
+        if env_key:
+            if verbose:
+                masked_key = f"{env_key[:8]}...{env_key[-4:]}" if len(env_key) > 12 else "***"
+                self.console.print(f"[green]✓[/green] API key found in environment variable: {masked_key}")
+        else:
+            if verbose:
+                self.console.print(f"[yellow]⚠[/yellow] No API key found in environment variable")
+        
+        # Check global config
+        if self.global_config_path.exists():
+            if verbose:
+                self.console.print(f"[green]✓[/green] Global config file exists")
+            try:
+                with open(self.global_config_path, "r", encoding="utf-8") as f:
+                    data = toml.load(f)
+                global_key = data.get("settings", {}).get(API_KEY_ENV_VAR)
+                if global_key:
+                    if verbose:
+                        masked_key = f"{global_key[:8]}...{global_key[-4:]}" if len(global_key) > 12 else "***"
+                        self.console.print(f"[green]✓[/green] API key found in global config: {masked_key}")
+                else:
+                    if verbose:
+                        self.console.print(f"[yellow]⚠[/yellow] No API key entry in global config")
+            except Exception as e:
+                if verbose:
+                    self.console.print(f"[red]✗[/red] Error reading global config: {e}")
+        else:
+            if verbose:
+                self.console.print(f"[yellow]⚠[/yellow] Global config file does not exist")
+        
+        # Check file permissions on global config dir and file
+        if self.global_config_dir.exists():
+            if verbose:
+                self.console.print(f"[green]✓[/green] Global config directory exists")
+            try:
+                import stat
+                dir_mode = self.global_config_dir.stat().st_mode
+                dir_perms = stat.filemode(dir_mode)
+                if verbose:
+                    self.console.print(f"[dim]Directory permissions: {dir_perms}[/dim]")
+                
+                if self.global_config_path.exists():
+                    file_mode = self.global_config_path.stat().st_mode
+                    file_perms = stat.filemode(file_mode)
+                    if verbose:
+                        self.console.print(f"[dim]File permissions: {file_perms}[/dim]")
+            except Exception as e:
+                if verbose:
+                    self.console.print(f"[dim]Could not check file permissions: {e}[/dim]")
+        else:
+            if verbose:
+                self.console.print(f"[yellow]⚠[/yellow] Global config directory does not exist")
+        
+        # Check if we can load the key successfully
+        api_key = self.load_api_key()
+        if api_key:
+            if verbose:
+                self.console.print(f"[green]✓[/green] Successfully loaded API key through normal channels")
+        else:
+            if verbose:
+                self.console.print(f"[red]✗[/red] No API key could be loaded") 

@@ -1,0 +1,7 @@
+include = [ "./",]
+exclude = [ ".git/", "__pycache__/", "node_modules/", ".vscode/", "*.log", ".npconfig.toml", ".np_git_cache/", "np_output/", "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.webp", "*.ico", "*.bmp", ".DS_Store", "*.pyc", "*.pyo", "*~$*", ".env", "venv/", ".venv/", "dist/", "build/", "*.egg-info/",]
+llms = []
+
+[model_overrides]
+
+[git_repo_map]

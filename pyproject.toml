@@ -1,0 +1,80 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nerd-prompt"
+version = "1.0.0"
+description = "Context Assembler & LLM Interaction CLI"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" } # Add a LICENSE file (e.g., MIT)
+authors = [
+    { name = "Your Name", email = "your.email@example.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License", # Choose your license
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+dependencies = [
+    "rich>=13.0.0",
+    "questionary>=2.0.0",
+    "pyperclip>=1.8.0",
+    "requests>=2.28.0",
+    "python-dotenv>=1.0.0",
+    "appdirs>=1.4.0",
+    "toml>=0.10.0",
+    "typer[all]>=0.9.0", # Includes shell completion support
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/nerd-prompt" # Change this
+Repository = "https://github.com/yourusername/nerd-prompt" # Change this
+
+[project.scripts]
+np = "np.__main__:app"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/np",
+    "/tests", # Include tests if desired in sdist
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["np"]
+
+# --- Linting/Formatting/Typing Tools ---
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W", "I", "C90", "N", "UP", "B", "A", "SIM", "TID", "ARG", "PTH", "RUF"]
+ignore = ["E501"] # Handled by black
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+# strict = true # Enable for maximum strictness if desired
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+pythonpath = "." # To find the 'np' package 

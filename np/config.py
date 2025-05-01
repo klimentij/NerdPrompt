@@ -1,0 +1,174 @@
+import os
+import toml
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Tuple, Set
+from dataclasses import dataclass, field
+
+import appdirs
+from dotenv import load_dotenv
+from rich.console import Console
+
+# --- Constants ---
+PROJECT_CONFIG_FILENAME = ".npconfig.toml"
+GLOBAL_CONFIG_DIR_NAME = "nerd-prompt"
+GLOBAL_CONFIG_FILENAME = "settings.toml"
+API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
+DEFAULT_CHARS_PER_TOKEN = 4.0
+
+DEFAULT_EXCLUDES = [
+    ".git/",
+    "__pycache__/",
+    "node_modules/",
+    ".vscode/",
+    "*.log",
+    PROJECT_CONFIG_FILENAME,
+    ".np_git_cache/", # Excluded for file discovery, not the repo itself
+    "np_output/", # Exclude the output dir from context gathering
+    # Common image formats
+    "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.webp", "*.ico", "*.bmp",
+    # Other common artifacts
+    ".DS_Store",
+    "*.pyc",
+    "*.pyo",
+    "*~$*", # Temp Word files etc.
+    ".env", # Often contains secrets
+    "venv/",
+    ".venv/",
+    "dist/",
+    "build/",
+    "*.egg-info/",
+]
+
+# --- Dataclasses for Configuration ---
+
+@dataclass
+class RunConfig:
+    """ Holds the final configuration for a single run. """
+    includes: List[str] = field(default_factory=lambda: ["./"])
+    excludes: List[str] = field(default_factory=list) # Will be combined with defaults + gitignore
+    llms: List[str] = field(default_factory=list)
+    task_name: str = ""
+    task_definition: str = ""
+    model_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    skip_confirmation: bool = False
+    project_root: Path = field(default_factory=Path.cwd)
+    api_key: Optional[str] = None # Loaded separately
+
+
+@dataclass
+class ProjectState:
+    """ Represents the persistent state stored in .npconfig.toml """
+    # User Preferences / Defaults for next run
+    default_includes: List[str] = field(default_factory=lambda: ["./"])
+    default_excludes: List[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDES))
+    default_llms: List[str] = field(default_factory=list)
+    default_model_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Internal State
+    git_repo_map: Dict[str, str] = field(default_factory=dict) # "url#branch": "NNN-repo-name"
+
+# --- Configuration Management Class ---
+
+class ConfigManager:
+    """ Handles loading, saving, and managing project and global configurations. """
+    def __init__(self, project_root: Path = Path.cwd(), console: Optional[Console] = None):
+        self.project_root = project_root
+        self.project_config_path = self.project_root / PROJECT_CONFIG_FILENAME
+        self.global_config_dir = Path(appdirs.user_config_dir(GLOBAL_CONFIG_DIR_NAME))
+        self.global_config_path = self.global_config_dir / GLOBAL_CONFIG_FILENAME
+        self.console = console or Console()
+
+    def load_project_state(self) -> ProjectState:
+        """ Loads project state from .npconfig.toml, returning defaults if not found. """
+        state = ProjectState() # Start with defaults
+        if self.project_config_path.exists():
+            try:
+                with open(self.project_config_path, "r", encoding="utf-8") as f:
+                    data = toml.load(f)
+                # Load preferences
+                state.default_includes = data.get("include", state.default_includes)
+                state.default_excludes = data.get("exclude", state.default_excludes)
+                state.default_llms = data.get("llms", state.default_llms)
+                state.default_model_overrides = data.get("model_overrides", state.default_model_overrides)
+                # Load internal state
+                state.git_repo_map = data.get("git_repo_map", state.git_repo_map)
+            except Exception as e:
+                self.console.print(f"[yellow]Warning:[/yellow] Could not load project config '{self.project_config_path}': {e}")
+        return state
+
+    def save_project_state(self, state: ProjectState) -> None:
+        """ Saves the project state (prefs + git map) to .npconfig.toml. """
+        data = {
+            "include": state.default_includes,
+            "exclude": state.default_excludes,
+            "llms": state.default_llms,
+            "model_overrides": state.default_model_overrides,
+            "git_repo_map": state.git_repo_map,
+        }
+        try:
+            with open(self.project_config_path, "w", encoding="utf-8") as f:
+                toml.dump(data, f)
+        except Exception as e:
+            self.console.print(f"[red]Error:[/red] Could not save project config '{self.project_config_path}': {e}")
+
+    def update_git_repo_map(self, repo_key: str, folder_name: str) -> None:
+        """ Adds or updates an entry in the git_repo_map and saves immediately. """
+        state = self.load_project_state()
+        if state.git_repo_map.get(repo_key) != folder_name:
+            state.git_repo_map[repo_key] = folder_name
+            self.save_project_state(state)
+            self.console.print(f"[dim]Updated git repo map for '{repo_key}' -> '{folder_name}' in {self.project_config_path}[/dim]")
+
+    def load_api_key(self) -> Optional[str]:
+        """ Loads OpenRouter API key from ENV var first, then global config file. """
+        load_dotenv() # Load .env file if present in CWD or parent dirs
+        api_key = os.getenv(API_KEY_ENV_VAR)
+        if api_key:
+            return api_key.strip()
+
+        if self.global_config_path.exists():
+            try:
+                with open(self.global_config_path, "r", encoding="utf-8") as f:
+                    data = toml.load(f)
+                api_key = data.get("settings", {}).get(API_KEY_ENV_VAR)
+                if api_key:
+                    return api_key.strip()
+            except Exception as e:
+                self.console.print(f"[yellow]Warning:[/yellow] Could not load global config '{self.global_config_path}': {e}")
+        return None
+
+    def save_api_key(self, api_key: str) -> bool:
+        """ Saves OpenRouter API key to the global config file. """
+        try:
+            self.global_config_dir.mkdir(parents=True, exist_ok=True)
+            # Attempt to set permissions (works reliably on Unix-like systems)
+            try:
+                 os.chmod(self.global_config_dir, 0o700)
+            except OSError:
+                 pass # Ignore if chmod fails (e.g., on Windows)
+
+            data = {"settings": {API_KEY_ENV_VAR: api_key}}
+            with open(self.global_config_path, "w", encoding="utf-8") as f:
+                toml.dump(data, f)
+            try:
+                os.chmod(self.global_config_path, 0o600)
+            except OSError:
+                pass # Ignore if chmod fails
+            return True
+        except Exception as e:
+            self.console.print(f"[red]Error:[/red] Could not save API key to '{self.global_config_path}': {e}")
+            return False
+
+    def load_gitignore_patterns(self) -> List[str]:
+        """ Loads patterns from .gitignore in the project root. """
+        gitignore_path = self.project_root / ".gitignore"
+        patterns = []
+        if gitignore_path.exists():
+            try:
+                with open(gitignore_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#"):
+                            patterns.append(line)
+            except Exception as e:
+                self.console.print(f"[yellow]Warning:[/yellow] Could not read '{gitignore_path}': {e}")
+        return patterns 

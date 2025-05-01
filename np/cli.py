@@ -1,12 +1,15 @@
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple, Annotated
+import os
+import stat
+import time
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from .config import ConfigManager, RunConfig, ProjectState, DEFAULT_EXCLUDES
+from .config import ConfigManager, RunConfig, ProjectState, DEFAULT_EXCLUDES, API_KEY_ENV_VAR, GLOBAL_CONFIG_DIR_NAME
 from .interactive import InteractiveSetup
 from .core import CoreProcessor
 from .output_builder import OutputBuilder
@@ -35,6 +38,56 @@ def main_callback(
 ):
     """ Nerd Prompt CLI entry point """
     pass
+
+
+# --- Key management helper functions ---
+def check_directory_access(path: Path, console: Console) -> bool:
+    """Test if we can write to a directory"""
+    if not path.exists():
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            console.print(f"[green]Created directory:[/green] {path}")
+        except Exception as e:
+            console.print(f"[red]Error creating directory:[/red] {path}\n{str(e)}")
+            return False
+    
+    # Try writing a test file
+    test_file = path / "test_write.txt"
+    try:
+        test_file.write_text("test")
+        test_file.unlink()  # Delete after successful test
+        console.print(f"[green]Successfully wrote to directory:[/green] {path}")
+        return True
+    except Exception as e:
+        console.print(f"[red]Error writing to directory:[/red] {path}\n{str(e)}")
+        return False
+
+
+def verify_key_storage(api_key: str, config_manager: ConfigManager, console: Console) -> bool:
+    """Verify API key is stored in the global config"""
+    global_config_path = config_manager.global_config_path
+    success = True
+    
+    # Check global config
+    if global_config_path.exists():
+        try:
+            import toml
+            with open(global_config_path, "r", encoding="utf-8") as f:
+                data = toml.load(f)
+            stored_key = data.get("settings", {}).get(API_KEY_ENV_VAR)
+            if stored_key == api_key:
+                console.print(f"[green]✓ Key verified in global config:[/green] {global_config_path}")
+            else:
+                console.print(f"[red]✗ Key in global config doesn't match input key[/red]")
+                success = False
+        except Exception as e:
+            console.print(f"[red]✗ Error reading global config: {e}[/red]")
+            success = False
+    else:
+        console.print(f"[red]✗ Global config file doesn't exist[/red]")
+        success = False
+    
+    return success
 
 
 # --- Non-Interactive Command Definition ---
@@ -156,39 +209,61 @@ def run(
 
         # Handle API key
         api_key = config_manager.load_api_key()
-        if set_api_key and not api_key:
-             console.print("[yellow]--set-api-key used, but no key found. Attempting to prompt...[/yellow]")
-             # Fallback to prompt if forced and no key exists
-             set_api_key = True # Ensure prompt happens
-
-        if set_api_key:
-            import questionary # Import only if needed
-            from .interactive import custom_style # Import style
-            new_api_key = questionary.password(
-                 "Enter your OpenRouter API Key:",
-                 validate=lambda k: True if k and k.startswith("sk-or-") else "Key should start with 'sk-or-'",
-                 style=custom_style
-            ).ask()
+        if api_key:
+            masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
+            console.print(f"[green]Using existing API key: {masked_key}[/green]")
+            run_config.api_key = api_key
+            
+        if set_api_key or not api_key:
+            if set_api_key:
+                console.print("[yellow]--set-api-key flag used. Will prompt for API key.[/yellow]")
+            elif not api_key:
+                console.print("[yellow]No API key found. Will prompt for API key.[/yellow]")
+                
+            # Instead of inline prompting, suggest using the dedicated command
+            console.print("[cyan]For a better API key setup experience, use the dedicated command:[/cyan]")
+            console.print("   [bold]np set-key[/bold]")
+            
+            if not yes:  # If not using -y/--yes flag
+                proceed = typer.confirm("Continue with inline API key setup?", default=True)
+                if not proceed:
+                    console.print("Run 'np set-key' and then try again.")
+                    raise typer.Exit(code=0)
+            
+            # Import here to avoid circular imports
+            import getpass
+            try:
+                new_api_key = getpass.getpass("Enter your OpenRouter API Key: ")
+            except Exception:
+                new_api_key = input("Enter your OpenRouter API Key: ")
+                
             if new_api_key:
-                if config_manager.save_api_key(new_api_key):
-                     # Verify the key was saved properly by reading it back
-                     verified_key = config_manager.load_api_key()
-                     if verified_key == new_api_key:
-                         console.print("[green]✅ API Key verified and saved correctly[/green]")
-                         run_config.api_key = new_api_key
-                     else:
-                         console.print("[red]⚠️ Warning: Saved API key doesn't match what was entered[/red]")
-                         console.print(f"[yellow]Setting key for current run only. Please check permissions on {config_manager.global_config_path}[/yellow]")
-                         # Use the key for this run anyway
-                         run_config.api_key = new_api_key
+                if not new_api_key.startswith("sk-or-"):
+                    console.print("[yellow]Warning: Key doesn't start with 'sk-or-'[/yellow]")
+                    if not typer.confirm("Continue anyway?", default=False):
+                        console.print("Operation cancelled.")
+                        raise typer.Exit(code=0)
+                
+                # Save the key
+                masked_key = f"{new_api_key[:8]}...{new_api_key[-4:]}" if len(new_api_key) > 12 else "***"
+                if config_manager.set_global_api_key(new_api_key):
+                    console.print(f"[green]API key has been saved globally: {masked_key}[/green]")
+                    
+                    # Verify by loading back
+                    time.sleep(0.2)  # Give filesystem a moment
+                    loaded_key = config_manager.load_api_key()
+                    if loaded_key and loaded_key == new_api_key:
+                        console.print(f"[green]✓ API key verified: Successfully loaded the saved key[/green]")
+                        run_config.api_key = loaded_key
+                    else:
+                        console.print("[yellow]Warning: Could not verify the saved key. Using for current run only.[/yellow]")
+                        run_config.api_key = new_api_key
                 else:
-                     console.print("[red]Failed to save API key. Exiting.[/red]")
-                     raise typer.Exit(code=1)
+                    console.print(f"[yellow]Failed to save API key globally. Using for current run only: {masked_key}[/yellow]")
+                    run_config.api_key = new_api_key
             else:
-                console.print("[red]API key entry required (--set-api-key) but cancelled. Exiting.[/red]")
+                console.print("[red]No API key provided. Cannot continue.[/red]")
                 raise typer.Exit(code=1)
-        else:
-             run_config.api_key = api_key # Use loaded key
 
 
         # Display summary if not skipping confirmation
@@ -229,6 +304,102 @@ def run(
 
 
 @app.command()
+def set_key(
+    api_key: Optional[str] = typer.Argument(None, help="Your OpenRouter API key. If not provided, will prompt for it."),
+    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite of existing key.")
+) -> None:
+    """
+    Set your OpenRouter API key globally.
+    The key will be stored in the user's global config directory and used for all nerd-prompt projects.
+    """
+    import appdirs
+    import getpass
+    from rich.prompt import Confirm
+    import toml
+
+    console.print(Panel("OpenRouter API Key Setup", title="nerd-prompt", expand=False, style="blue"))
+    
+    # Check for global config directory
+    global_config_dir = Path(appdirs.user_config_dir(GLOBAL_CONFIG_DIR_NAME))
+    console.print(f"Global config directory: [cyan]{global_config_dir}[/cyan]")
+    
+    # Test if we can write to the global config directory
+    write_access = check_directory_access(global_config_dir, console)
+    if not write_access:
+        console.print("[yellow]Warning: Cannot write to global config directory[/yellow]")
+        if not Confirm.ask("Continue anyway?", default=True):
+            return
+    
+    # Get API key from command line or prompt
+    if not api_key:
+        try:
+            api_key = getpass.getpass("Enter your OpenRouter API key: ")
+        except ImportError:
+            api_key = input("Enter your OpenRouter API key: ")
+    
+    if not api_key:
+        console.print("[red]No API key provided. Exiting.[/red]")
+        return
+    
+    if not api_key.startswith("sk-or-"):
+        console.print("[yellow]Warning: API key doesn't start with 'sk-or-'[/yellow]")
+        if not Confirm.ask("Continue anyway?", default=False):
+            return
+    
+    # Check if key exists and confirm overwrite if it does
+    config_manager = ConfigManager(Path.cwd(), console)
+    existing_key = config_manager.load_api_key()
+    
+    if existing_key and not force:
+        masked_existing = f"{existing_key[:8]}...{existing_key[-4:]}" if len(existing_key) > 12 else "***"
+        console.print(f"[yellow]An API key is already set: [bold]{masked_existing}[/bold][/yellow]")
+        if not Confirm.ask("Overwrite existing API key?", default=False):
+            return
+    
+    # Save the API key
+    success = config_manager.set_global_api_key(api_key)
+    
+    if success:
+        masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
+        console.print(f"[green]API key has been saved: [bold]{masked_key}[/bold][/green]")
+        
+        # Check file permissions
+        try:
+            for path in [global_config_dir, config_manager.global_config_path]:
+                if path.exists():
+                    mode = path.stat().st_mode
+                    perms = stat.filemode(mode)
+                    console.print(f"[dim]Permissions for {path}: {perms}[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]Could not check file permissions: {e}[/yellow]")
+        
+        # Verify key storage in global config
+        console.print("\n[bold]Verifying API key storage:[/bold]")
+        verify_success = verify_key_storage(api_key, config_manager, console)
+        
+        # Verify by loading the key back through ConfigManager
+        time.sleep(0.2)  # Give filesystem a moment
+        loaded_key = config_manager.load_api_key()
+        if loaded_key and loaded_key == api_key:
+            console.print(f"[green]✓ API key verified: Successfully loaded the saved key [bold]{masked_key}[/bold][/green]")
+        else:
+            console.print("[red]⚠️ Warning: Could not verify the saved key[/red]")
+            console.print("[yellow]Running debug to diagnose the issue:[/yellow]")
+            config_manager.debug_api_key(verbose=True)
+        
+        if verify_success:
+            console.print("\n[green bold]✓ API key successfully stored globally[/green bold]")
+            console.print("[dim]You can now use nerd-prompt without needing to re-enter your API key.[/dim]")
+            console.print("[dim]Best practice: API keys are stored in the user's global config directory, separate from any project files.[/dim]")
+        else:
+            console.print("\n[yellow]⚠️ There were some issues with API key storage.[/yellow]")
+    else:
+        console.print("[red]Failed to save API key. See error messages above for details.[/red]")
+        console.print("[yellow]Running debug to diagnose the issue:[/yellow]")
+        config_manager.debug_api_key(verbose=True)
+
+
+@app.command()
 def debug_api():
     """
     Debug API key storage and retrieval.
@@ -249,11 +420,12 @@ def debug_api():
     console.print("\n[bold]API Key Status:[/bold]")
     api_key = config_manager.load_api_key()
     if api_key:
-        console.print("[green]✓ API key is available for use[/green]")
+        masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
+        console.print(f"[green]✓ API key is available for use: {masked_key}[/green]")
     else:
         console.print("[red]✗ No API key available[/red]")
         console.print("\n[bold]Recommended Actions:[/bold]")
-        console.print("Run: [cyan]np run --set-api-key[/cyan] to set a global API key")
+        console.print("Run: [cyan]np set-key[/cyan] to set a global API key")
         console.print("or add [cyan]OPENROUTER_API_KEY=sk-or-your-key[/cyan] to your environment variables")
 
 

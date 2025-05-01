@@ -110,8 +110,17 @@ np run \
 ### Global Configuration (API Key)
 
 *   Your OpenRouter API key is stored securely in a global configuration file specific to your user account (location determined by `appdirs`, e.g., `~/.config/nerd-prompt/settings.toml`).
-*   Set the key interactively (`np` -> Advanced Settings) or use the `--set-api-key` flag non-interactively.
+*   Set the key using the dedicated command:
+    ```bash
+    np set-key
+    ```
+*   You can also set the key interactively (`np` -> Advanced Settings) or use the `--set-api-key` flag non-interactively.
 *   Alternatively, set the `OPENROUTER_API_KEY` environment variable (takes precedence).
+
+If you want to see detailed debug information about your API key configuration:
+```bash
+np debug-api
+```
 
 ## Git Repository Handling
 

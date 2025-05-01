@@ -268,7 +268,9 @@ class ConfigManager:
         api_key = self.load_api_key()
         if api_key:
             if verbose:
-                self.console.print(f"[green]✓[/green] Successfully loaded API key through normal channels")
+                masked_key = f"{api_key[:8]}...{api_key[-4:]}" if len(api_key) > 12 else "***"
+                self.console.print(f"[green]✓[/green] Successfully loaded API key through normal channels: {masked_key}")
+                self.console.print(f"[green]✓[/green] API key length: {len(api_key)} characters")
         else:
             if verbose:
                 self.console.print(f"[red]✗[/red] No API key could be loaded")

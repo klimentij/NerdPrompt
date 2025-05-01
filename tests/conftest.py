@@ -55,10 +55,23 @@ def mock_output_builder(temp_project_dir, mocker):
 def mock_git_handler(temp_project_dir, mock_config_manager, mock_output_builder, mocker):
      """ Mocks the GitHandler """
      from np.git_handler import GitHandler
+     from unittest.mock import MagicMock
+     
      console_mock = mocker.MagicMock()
      handler = GitHandler(temp_project_dir, mock_config_manager, mock_output_builder, console=console_mock)
-     # Mock subprocess calls within the handler
+     
+     # Mock subprocess calls within the handler for git commands
      handler._run_git_command = mocker.MagicMock(return_value=(0, "mock output", "")) # Default success
+     
+     # Mock config manager's load_project_state and update_git_repo_map methods
+     project_state = MagicMock()
+     project_state.git_repo_map = {}
+     mock_config_manager.load_project_state = mocker.MagicMock(return_value=project_state)
+     mock_config_manager.update_git_repo_map = mocker.MagicMock()
+     
+     # Mock output_builder's get_next_folder_number method
+     mock_output_builder.get_next_folder_number = mocker.MagicMock(return_value=(3, "003"))
+     
      return handler
 
 @pytest.fixture

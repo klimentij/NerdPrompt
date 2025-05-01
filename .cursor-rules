@@ -1,0 +1,13 @@
+[
+  {
+    "name": "NerdPrompt Checklist",
+    "description": "Pre-commit checklist for NerdPrompt development",
+    "checklist": [
+      "Run tests with `pytest` and fix any failures",
+      "Run tests with testproject folder: `pytest tests/test_np_cli_integration.py -v`",
+      "Check code coverage with `pytest --cov=np`",
+      "Make sure .gitignore includes `.uv`, `__pycache__`, etc.",
+      "Keep the virtual environment hidden (`.venv`)"
+    ]
+  }
+] 

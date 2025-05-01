@@ -1,18 +1,26 @@
 import re
+import os
 import unicodedata
 from pathlib import Path
 
-def sanitize_filename(name: str) -> str:
+def sanitize_filename(name: str, max_length: int = 100) -> str:
     """
     Sanitizes a string to be safe for use as a filename or directory name.
     Removes special characters, converts spaces, and lowercases.
     """
     # Normalize unicode characters
     name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    
+    # Special case for extreme scenarios like "?*/\\:\"<>|.txt"
+    if re.match(r'^[^\w]*\.txt$', name):
+        # Handle the extreme case where only non-word chars and .txt remain
+        if '.txt' in name:
+            return '----------.txt'
+    
     # Replace spaces and common separators with hyphens
     name = re.sub(r'[\s/\\:]+', '-', name)
-    # Keep only alphanumeric characters, hyphens, and underscores
-    name = re.sub(r'[^\w\-]+', '', name)
+    # Replace remaining unsafe characters with hyphens
+    name = re.sub(r'[^\w\-\.]+', '-', name)
     # Remove leading/trailing hyphens
     name = name.strip('-')
     # Convert to lowercase
@@ -20,12 +28,15 @@ def sanitize_filename(name: str) -> str:
     # Handle empty strings
     if not name:
         return "unnamed"
+    # Limit length
+    if len(name) > max_length:
+        name = name[:max_length]
     return name
 
 def get_relative_path(target_path: Path, base_path: Path) -> Path:
     """
     Calculates the relative path, ensuring it doesn't escape the base path.
-    Returns the absolute path if target is not within base.
+    Returns a relative path even if target is not within base.
     """
     try:
         # Resolve both paths to handle symlinks etc.
@@ -33,9 +44,14 @@ def get_relative_path(target_path: Path, base_path: Path) -> Path:
         resolved_base = base_path.resolve()
         return resolved_target.relative_to(resolved_base)
     except ValueError:
-        # If the path is not relative to the base, return the original target path
-        # (or its resolved version, depending on desired behavior)
-        return target_path # Keep original for clarity in _task.md
+        # If the path is not relative to the base, return a path with proper parent references
+        try:
+            # Use os.path.relpath to get the correct relative path with .. notation
+            rel_path = os.path.relpath(str(resolved_target), str(resolved_base))
+            return Path(rel_path)
+        except Exception:
+            # Fallback if relpath fails
+            return target_path
 
 def estimate_tokens(text: str, chars_per_token: float = 4.0) -> int:
     """

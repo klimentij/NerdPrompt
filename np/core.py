@@ -164,7 +164,8 @@ class CoreProcessor:
         # Add file contents
         for file_path in included_files:
             relative_path = get_relative_path(file_path, self.project_root)
-            header = f"## Source: {str(relative_path).replace('\\', '/')}\n\n"
+            path_str = str(relative_path).replace('\\', '/')
+            header = f"## Source: {path_str}\n\n"
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='replace') as infile:
                     content = infile.read()

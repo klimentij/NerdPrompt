@@ -38,6 +38,7 @@ class InteractiveSetup:
 
     def _ask_sources(self) -> None:
         """ Step 1: Configure include/exclude patterns. """
+        self.console.print() # Add newline for spacing
         self.console.print(Panel("Step 1: Configure Sources", title="Interactive Setup", expand=False, style="blue"))
 
         # Display current settings
@@ -47,6 +48,7 @@ class InteractiveSetup:
         if self.gitignore_patterns:
             table.add_row("[bold].gitignore:[/bold]", f"[dim]({len(self.gitignore_patterns)} patterns loaded)[/dim]")
         self.console.print(table)
+        self.console.print() # Add newline for spacing
 
         modify = questionary.confirm(
             "Modify include/exclude patterns?",
@@ -77,9 +79,11 @@ class InteractiveSetup:
 
     def _ask_llms(self) -> None:
         """ Step 2: Configure target LLMs. """
+        self.console.print() # Add newline for spacing
         self.console.print(Panel("Step 2: Select LLMs", title="Interactive Setup", expand=False, style="blue"))
         current_llms = self.project_state.default_llms
         self.console.print(f"Current default LLMs: [cyan]{', '.join(current_llms) or 'None'}[/cyan]")
+        self.console.print() # Add newline for spacing
 
         llms_str = questionary.text(
             "Enter LLM names (space-separated):",
@@ -93,6 +97,7 @@ class InteractiveSetup:
 
     def _ask_task_name(self) -> None:
         """ Step 3: Get the task name. """
+        self.console.print() # Add newline for spacing
         self.console.print(Panel("Step 3: Name Your Task", title="Interactive Setup", expand=False, style="blue"))
         task_name = ""
         while not task_name:
@@ -106,6 +111,7 @@ class InteractiveSetup:
 
     def _ask_task_definition(self) -> None:
         """ Step 4: Get the task definition. """
+        self.console.print() # Add newline for spacing
         self.console.print(Panel("Step 4: Define the Task", title="Interactive Setup", expand=False, style="blue"))
         method = questionary.select(
             "How do you want to provide the task definition?",
@@ -138,6 +144,7 @@ class InteractiveSetup:
 
     def _ask_advanced(self) -> None:
         """ Step 5: Optional advanced settings (API Key, Parameters). """
+        self.console.print() # Add newline for spacing
         self.console.print(Panel("Step 5: Advanced Settings (Optional)", title="Interactive Setup", expand=False, style="blue"))
 
         configure_advanced = questionary.confirm("Configure advanced settings?", default=False, style=custom_style).ask()

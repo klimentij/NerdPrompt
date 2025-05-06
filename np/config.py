@@ -62,7 +62,9 @@ class ProjectState:
     default_includes: List[str] = field(default_factory=lambda: ["./"])
     default_excludes: List[str] = field(default_factory=lambda: list(DEFAULT_EXCLUDES))
     default_llms: List[str] = field(default_factory=list)
+    last_task_name: Optional[str] = None # Added to store the last used task name
     default_model_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    copy_to_clipboard: bool = True # Whether to copy the response to clipboard
     # Internal State
     git_repo_map: Dict[str, str] = field(default_factory=dict) # "url#branch": "NNN-repo-name"
 
@@ -88,7 +90,9 @@ class ConfigManager:
                 state.default_includes = data.get("include", state.default_includes)
                 state.default_excludes = data.get("exclude", state.default_excludes)
                 state.default_llms = data.get("llms", state.default_llms)
+                state.last_task_name = data.get("last_task_name", state.last_task_name) # Load last_task_name
                 state.default_model_overrides = data.get("model_overrides", state.default_model_overrides)
+                state.copy_to_clipboard = data.get("copy_to_clipboard", state.copy_to_clipboard)
                 # Load internal state
                 state.git_repo_map = data.get("git_repo_map", state.git_repo_map)
             except Exception as e:
@@ -101,7 +105,9 @@ class ConfigManager:
             "include": state.default_includes,
             "exclude": state.default_excludes,
             "llms": state.default_llms,
+            "last_task_name": state.last_task_name, # Save last_task_name
             "model_overrides": state.default_model_overrides,
+            "copy_to_clipboard": state.copy_to_clipboard,
             "git_repo_map": state.git_repo_map,
         }
         try:
@@ -281,4 +287,31 @@ class ConfigManager:
         Use this method to directly set the API key without interactive prompts.
         Returns True if successful.
         """
-        return self.save_api_key(api_key) 
+        return self.save_api_key(api_key)
+
+    def confirm_proceed(self, prompt: str) -> bool:
+        """
+        Asks the user for confirmation before proceeding.
+        Args:
+            prompt: The question to ask the user.
+        Returns:
+            bool: True if the user confirms, False otherwise.
+        """
+        try:
+            import questionary
+            custom_style = questionary.Style([
+                ('qmark', 'fg:#673ab7 bold'),       # Mark question with '?'.
+                ('question', 'bold'),               # Question text.
+                ('answer', 'fg:#ff5722 bold'),      # Answer text has yellowish color.
+                ('pointer', 'fg:#673ab7 bold'),     # Pointer symbol '»'.
+                ('highlighted', 'fg:#673ab7 bold'), # Highlighted selection in a list.
+                ('selected', 'fg:#cc5454'),         # Marked choice in a checkbox prompt.
+                ('separator', 'fg:#cc5454'),        # Separator in lists.
+                ('instruction', ''),                # Guidance instructions.
+                ('text', ''),                       # Plain text.
+                ('disabled', 'fg:#858585 italic')   # Disabled choices.
+            ])
+            return questionary.confirm(prompt, default=True, style=custom_style).ask() or False
+        except Exception as e:
+            self.console.print(f"[yellow]Warning: Could not get confirmation. Defaulting to No. Error: {e}[/yellow]")
+            return False 

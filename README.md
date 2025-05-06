@@ -56,11 +56,13 @@ This will launch a guided setup process using interactive prompts (`questionary`
 *   **LLMs:** A space-separated list of target LLM names.
     *   Names containing a `/` (e.g., `google/gemini-pro`, `anthropic/claude-3-sonnet`) are assumed to be OpenRouter models and will be processed automatically if an API key is configured.
     *   Other names (e.g., `manual-gpt4o`, `local-llama`) act as placeholders, creating empty files for you to manually fill with responses.
-*   **Task Name:** A short, descriptive name for this specific run (used for the output folder).
-*   **Task Definition:** The instructions for the LLM, entered directly or loaded from a `.md`/`.txt` file.
+*   **Task Name:** A short, descriptive name for this specific run (used for the output folder), pre-filled from the last run if available.
+*   **Task Definition:** The instructions for the LLM.
+    *   If a project configuration (`.npconfig.toml`) exists, you'll be prompted to enter the task directly.
+    *   During a first-time setup for a project, you can choose to enter the task directly or load it from a `.md`/`.txt` file.
 *   **Advanced Settings (Optional):** Manage your OpenRouter API key globally or set model-specific parameters (like `temperature`).
 
-Your preferences for includes, excludes, LLMs, and parameter overrides are saved to `.npconfig.toml` in your project directory for future runs.
+Your preferences for includes, excludes, LLMs, the last task name, and parameter overrides are saved to `.npconfig.toml` in your project directory for future runs.
 
 ### 2. Non-Interactive Mode
 

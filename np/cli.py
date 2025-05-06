@@ -23,6 +23,7 @@ app = typer.Typer(
     help="nerd-prompt: Context Assembler & LLM Interaction CLI.",
     add_completion=True,
     no_args_is_help=False,
+    invoke_without_command=True
 )
 
 console = Console()
@@ -34,10 +35,53 @@ def version_callback(value: bool):
 
 @app.callback()
 def main_callback(
+    ctx: typer.Context,
     version: Annotated[Optional[bool], typer.Option("--version", "-V", callback=version_callback, is_eager=True, help="Show version and exit.")] = None,
 ):
     """ Nerd Prompt CLI entry point """
-    pass
+    if ctx.invoked_subcommand is None:
+        # If no subcommand is given (e.g., just 'np'), run the interactive setup.
+        # We need to manually call the logic that the 'run' command would execute
+        # when it decides to go into interactive mode.
+        project_root = Path.cwd()
+        config_manager = ConfigManager(project_root, console)
+        console.print("[bold green]No command specified. Starting interactive setup...[/bold green]")
+        interactive_setup = InteractiveSetup(config_manager, console)
+        run_config_obj = interactive_setup.run_setup()
+        if not run_config_obj:
+            raise typer.Exit(code=1)
+        
+        # Since we are bypassing the direct call to the 'run' command, 
+        # we need to manually trigger the core processing if setup was successful.
+        # This duplicates the latter part of the 'run' command logic.
+        # Ensure API key is in run_config (should be handled by interactive_setup)
+        if not run_config_obj.api_key and any("/" in llm_name for llm_name in run_config_obj.llms):
+            console.print("[yellow]Warning: API key not set. OpenRouter models may fail.[/yellow]")
+
+        # Correctly instantiate all components before CoreProcessor
+        output_builder = OutputBuilder(config_manager.project_root, console)
+        git_handler = GitHandler(run_config_obj.project_root, config_manager, output_builder, console)
+        # LLMApi will be instantiated inside CoreProcessor.run()
+        
+        processor = CoreProcessor(
+            config=run_config_obj,
+            config_manager=config_manager,
+            output_builder=output_builder,
+            git_handler=git_handler,
+            # llm_api removed
+            console=console
+        )
+
+        # The llm_api.set_task_dir_path will be called within core_processor.run() via output_builder
+        try:
+            processor.run()
+            console.print(f"[bold green]Processing Complete for: {run_config_obj.task_name}[/bold green]")
+        except Exception as e:
+            # Ensure console is available for printing exceptions
+            current_console = getattr(processor, 'console', Console())
+            current_console.print_exception(show_locals=False)
+            current_console.print(f"[bold red]An unexpected error occurred during core processing: {e}[/bold red]")
+            raise typer.Exit(code=1)
 
 
 # --- Key management helper functions ---
@@ -107,9 +151,9 @@ SetApiKeyOpt = Annotated[bool, typer.Option("--set-api-key", help="Force prompt 
 YesOpt = Annotated[bool, typer.Option("-y", "--yes", help="Skip final confirmation prompt.")]
 
 
-@app.command(no_args_is_help=False) # Allow calling without subcommands if we want 'np' alone for interactive
+@app.command(no_args_is_help=False)
 def run(
-    # --- Arguments mirroring interactive steps ---
+    ctx: typer.Context,
     include: IncludeOpt = None,
     exclude: ExcludeOpt = None,
     llm: LLMOpt = None,
@@ -277,17 +321,18 @@ def run(
 
     # --- Instantiate Core Components ---
     # (Do this *after* determining mode and getting config)
-    output_builder = OutputBuilder(project_root, console)
+    # Ensure correct instantiation order and arguments for non-interactive 'run' command as well
+    output_builder = OutputBuilder(project_root, console) # project_root is Path.cwd() here
     git_handler = GitHandler(project_root, config_manager, output_builder, console)
-    llm_api = LLMApi(run_config.api_key, output_builder, Path("."), console) # Task dir path set later
+    # LLMApi will be instantiated inside CoreProcessor.run()
 
     # --- Run Core Processing ---
-    core_processor = CoreProcessor(
+    processor = CoreProcessor(
         config=run_config,
         config_manager=config_manager,
         output_builder=output_builder,
         git_handler=git_handler,
-        llm_api=llm_api, # Pass the instance
+        # llm_api removed
         console=console
     )
 
@@ -296,7 +341,7 @@ def run(
     # task_dir_path is initialized to Path(".") here and updated in CoreProcessor.run()
 
     try:
-        core_processor.run()
+        processor.run()
     except Exception as e:
         console.print_exception(show_locals=False)
         console.print(f"[bold red]An unexpected error occurred during processing: {e}[/bold red]")

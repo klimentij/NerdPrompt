@@ -12,7 +12,7 @@ from .config import RunConfig, ConfigManager, ProjectState, DEFAULT_EXCLUDES
 from .git_handler import GitHandler
 from .output_builder import OutputBuilder
 from .llm_api import LLMApi
-from .utils import estimate_tokens, get_relative_path
+from .utils import estimate_tokens, get_relative_path, sanitize_filename
 
 def pattern_matches_any(path: str, patterns: List[str]) -> bool:
     """
@@ -38,14 +38,12 @@ class CoreProcessor:
         config_manager: ConfigManager,
         output_builder: OutputBuilder,
         git_handler: GitHandler,
-        llm_api: LLMApi,
         console: Console
     ):
         self.config = config
         self.config_manager = config_manager
         self.output_builder = output_builder
         self.git_handler = git_handler
-        self.llm_api = llm_api
         self.console = console
         self.project_root = config.project_root
 
@@ -232,15 +230,13 @@ This section contains the primary instructions and current task to follow.
 
         # 2. Discover Files
         gitignore_patterns = self.config_manager.load_gitignore_patterns()
-        # Combine default excludes, config excludes, and CLI excludes
-        # Make excludes unique
         effective_excludes_set = set(DEFAULT_EXCLUDES)
-        effective_excludes_set.update(self.config_manager.load_project_state().default_excludes) # From config file
-        effective_excludes_set.update(self.config.excludes) # From CLI/interactive args
+        effective_excludes_set.update(self.config_manager.load_project_state().default_excludes)
+        effective_excludes_set.update(self.config.excludes)
         effective_excludes = sorted(list(effective_excludes_set))
 
         included_files = self._discover_files(
-            source_paths=git_source_paths, # Only pass git paths initially, discovery handles root/other includes
+            source_paths=git_source_paths,
             gitignore_patterns=gitignore_patterns,
             effective_includes=self.config.includes,
             effective_excludes=effective_excludes
@@ -249,46 +245,77 @@ This section contains the primary instructions and current task to follow.
         # 3. Assemble Prompt & Estimate Tokens
         merged_prompt, estimated_tokens = self._assemble_prompt(included_files, self.config.task_definition)
 
-        # 4. Copy to Clipboard
+        # 3.5 Copy the prompt to clipboard immediately
         try:
             pyperclip.copy(merged_prompt)
-            self.console.print(f"[bold green]✅ Merged prompt (~{estimated_tokens} tokens) copied to clipboard![/bold green]")
+            self.console.print(f"[green]Copied prompt to clipboard. You can paste it to other applications while waiting for the response.[/green]")
+        except pyperclip.PyperclipException as e:
+            self.console.print(f"[yellow]Warning: Could not copy prompt to clipboard. {e}[/yellow]")
         except Exception as e:
-            self.console.print(f"[yellow]Warning:[/yellow] Could not copy prompt to clipboard: {e}")
-            self.console.print("You may need to install 'xclip' or 'xsel' on Linux, or 'pbcopy' might be missing.")
+            self.console.print(f"[red]Error copying prompt to clipboard: {e}[/red]")
 
-        # 5. Create Output Structure
-        task_num_int, task_num_str = self.output_builder.get_next_folder_number() # Get number for the *task* folder
+        # 4. Create Task Output Structure
+        task_name_sanitized = sanitize_filename(self.config.task_name)
+        
         task_dir_path = self.output_builder.create_task_output_structure(
-            task_number_str=task_num_str,
-            task_name_sanitized=self.config.task_name, # Assumes name is already sanitized
-            original_task_name=self.config.task_name, # Need original name here? Let's assume config holds sanitized
+            task_number_str=self.output_builder.get_next_folder_number()[1],
+            task_name_sanitized=task_name_sanitized,
+            original_task_name=self.config.task_name,
             task_definition=self.config.task_definition,
-            included_local_files=included_files, # Pass discovered files
-            processed_git_repos=processed_git_repos, # Pass processed git details
+            included_local_files=included_files,
+            processed_git_repos=processed_git_repos,
             estimated_tokens=estimated_tokens,
             llm_names=self.config.llms
         )
 
-        # Update the LLMApi instance with the correct task directory path
-        self.llm_api.task_dir_path = task_dir_path
+        # 5. Instantiate LLMApi now that task_dir_path is known
+        llm_api = LLMApi(
+            api_key=self.config.api_key,
+            output_builder=self.output_builder,
+            task_dir_path=task_dir_path,
+            console=self.console
+        )
 
-        # 6. Process LLMs (if any)
-        if self.config.llms:
-            total_cost = self.llm_api.process_llms(
+        # 6. Process LLMs
+        if not self.config.llms:
+            self.console.print("[yellow]Warning: No LLMs specified in the configuration. Skipping LLM processing.[/yellow]")
+        elif not self.config.task_definition.strip():
+            self.console.print("[yellow]Warning: Task definition is empty. Skipping LLM processing.[/yellow]")
+        else:
+            if not self.config.skip_confirmation:
+                self.console.print(Panel(f"Estimated tokens for prompt: ~{estimated_tokens}", title="Token Estimate", expand=False))
+                if not self.config_manager.confirm_proceed(f"Proceed with sending to {len(self.config.llms)} LLM(s)?"):
+                    self.console.print("[yellow]Operation cancelled by user.[/yellow]")
+                    return
+
+            total_cost = llm_api.process_llms(
                 llm_names=self.config.llms,
                 merged_prompt=merged_prompt,
                 model_overrides=self.config.model_overrides
             )
-            if total_cost > 0:
-                 self.console.print(f"[blue]Total OpenRouter Cost: ${total_cost:.6f}[/blue]")
+            self.console.print(f"[green]LLM processing complete. Total estimated cost: ${total_cost:.6f}[/green]")
+
+        # 7. Copy LLM Response to Clipboard (always, if there's a primary LLM response)
+        if self.config.llms:  # Always copy to clipboard if there are LLMs
+            primary_llm_name = self.config.llms[0]
+            filename_sanitized = sanitize_filename(primary_llm_name) + ".md"
+            response_file_path = task_dir_path / filename_sanitized
+            if response_file_path.exists():
+                try:
+                    with open(response_file_path, 'r', encoding='utf-8') as f:
+                        response_content = f.read()
+                    metadata_marker = "\n\n---\n**Model:**"
+                    if metadata_marker in response_content:
+                        response_content = response_content.split(metadata_marker)[0]
+                    
+                    pyperclip.copy(response_content)
+                    self.console.print(f"[green]Copied LLM response from {primary_llm_name} to clipboard.[/green]")
+                except pyperclip.PyperclipException as e:
+                    self.console.print(f"[yellow]Warning: Could not copy response to clipboard. {e}[/yellow]")
+                except Exception as e:
+                    self.console.print(f"[red]Error reading response file for clipboard: {e}[/red]")
             else:
-                 # Check if any OR models *failed* vs just having manual models
-                 or_models = [m for m in self.config.llms if self.llm_api._is_openrouter_model(m)]
-                 if or_models:
-                      self.console.print("[yellow]Note: No cost reported from OpenRouter (check for errors above).[/yellow]")
+                self.console.print(f"[yellow]Warning: Primary LLM response file not found for clipboard copy: {response_file_path}[/yellow]")
 
-        else:
-            self.console.print("[yellow]No LLMs specified. Skipping LLM processing.[/yellow]")
-
-        self.console.print(Panel(f"Processing Complete for: [bold cyan]{self.config.task_name}[/bold cyan]", title="Nerd Prompt", expand=False)) 
+        self.console.print(f"[bold green]Nerd Prompt task '{self.config.task_name}' finished.[/bold green]")
+        self.console.print(f"Output written to: [cyan]{task_dir_path.relative_to(self.project_root)}[/cyan]") 

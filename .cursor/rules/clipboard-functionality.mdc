@@ -1,0 +1,33 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# NerdPrompt Clipboard Functionality
+
+NerdPrompt includes built-in clipboard functionality to improve workflow efficiency when working with LLMs.
+
+## Key Clipboard Features
+
+- **Prompt Copying**: The assembled prompt is automatically copied to clipboard immediately after creation before sending to LLM API. This allows users to paste it into other applications while waiting for the response.
+- **Response Copying**: The LLM response is automatically copied to clipboard once received, replacing the prompt.
+
+## Implementation Details
+
+- Clipboard functionality is implemented in [np/core.py](mdc:np/core.py) using the pyperclip library.
+- The prompt is copied to clipboard in the run() method, between steps 3 (prompt assembly) and 4 (output structure creation).
+- The response is copied to clipboard in step 7 of the run() method, after LLM processing is complete.
+- The global clipboard setting (always enabled by default) is stored in the ProjectState.copy_to_clipboard attribute in [np/config.py](mdc:np/config.py).
+
+## Error Handling
+
+Both clipboard operations are wrapped in try-except blocks to handle potential clipboard access issues gracefully:
+
+- PyperclipException: Handled specifically for clipboard-related errors
+- General exceptions: Caught to prevent clipboard issues from disrupting the main workflow
+
+## Usage Notes
+
+- No user action is required to enable clipboard functionality - it's automatic.
+- The console displays clear messages indicating when content is copied to clipboard.
+- If clipboard operations fail, warning messages are displayed but program execution continues.

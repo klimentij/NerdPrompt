@@ -1,0 +1,39 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# NerdPrompt Recent Updates
+
+This document tracks recent updates, bugfixes, and feature additions to NerdPrompt.
+
+## Recent Bugfixes
+
+### May 2024 - Confirmation and Clipboard Fixes
+
+- **Missing Confirmation Method**: Added the missing `confirm_proceed` method to [np/config.py](mdc:np/config.py) to fix the confirmation dialog when sending prompts to LLM APIs.
+- **ProjectState Clipboard Attribute**: Added the missing `copy_to_clipboard` attribute to the ProjectState class in [np/config.py](mdc:np/config.py).
+
+## Recent Feature Additions
+
+### May 2024 - Enhanced Clipboard Functionality
+
+- **Immediate Prompt Copying**: The assembled prompt is now automatically copied to clipboard before sending to LLM APIs, allowing users to paste it elsewhere while waiting.
+- **Response Copying Enhancements**: LLM responses are automatically copied to clipboard once received, with clearer console messages.
+
+## Implementation Details
+
+### Configuration Manager Updates
+
+- The ConfigManager class in [np/config.py](mdc:np/config.py) now includes a `confirm_proceed` method that uses questionary to display confirmation prompts.
+
+### Core Processor Updates
+
+- The CoreProcessor.run() method in [np/core.py](mdc:np/core.py) now copies the prompt to clipboard between steps 3 and 4.
+- Step 7 in CoreProcessor.run() now always copies LLM responses to clipboard (not contingent on configuration).
+
+## Planned Future Updates
+
+- Integration with more LLM providers beyond OpenRouter
+- Enhanced file filtering capabilities
+- Improved token usage estimation

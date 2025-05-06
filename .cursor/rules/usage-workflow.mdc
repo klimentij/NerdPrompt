@@ -1,0 +1,49 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# NerdPrompt Usage Workflow
+
+This guide explains the typical workflow for using NerdPrompt to assemble context and interact with LLMs.
+
+## Basic Workflow
+
+1. **Initialization**: Run `np` with no arguments to start the interactive setup process
+2. **Source Configuration**: Define include/exclude patterns for file discovery
+3. **LLM Selection**: Choose one or more LLM models (e.g., `google/gemini-pro`)
+4. **Task Definition**: Name your task and provide prompt instructions
+5. **API Key Configuration**: Enter or confirm your OpenRouter API key
+6. **Process Execution**: NerdPrompt assembles context, copies the prompt to clipboard, sends to LLMs, and copies responses
+
+## Clipboard Integration Points
+
+NerdPrompt strategically integrates clipboard operations at two key points:
+
+1. **After Prompt Assembly**: The complete prompt is copied to clipboard before sending to LLMs, allowing you to paste it into other applications while waiting
+2. **After Response Receipt**: The LLM response is copied to clipboard once received, replacing the prompt
+
+## Command Line Options
+
+Run `np --help` to see all available options. Common usage patterns:
+
+- `np`: Interactive mode with step-by-step configuration
+- `np --task "My task name" --llm "google/gemini-pro"`: Specify task name and LLM directly
+- `np --include "src/*.py" --exclude "tests/*"`: Custom file inclusion/exclusion patterns
+
+## Output Structure
+
+NerdPrompt creates an organized output structure for each run:
+
+- `np_output/NN-taskname/`: Main output directory
+- `np_output/NN-taskname/model-name.md`: LLM response(s)
+- `np_output/NN-taskname/_prompt.md`: Complete assembled prompt
+- `np_output/NN-taskname/_task.md`: Task metadata and configuration
+
+## Implementation
+
+The workflow is orchestrated by:
+
+- [np/cli.py](mdc:np/cli.py): Command-line interface and option parsing
+- [np/core.py](mdc:np/core.py): Main processing workflow in the CoreProcessor.run() method
+- [np/interactive.py](mdc:np/interactive.py): Interactive configuration via questionary prompts

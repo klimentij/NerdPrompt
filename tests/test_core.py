@@ -134,14 +134,24 @@ def test_run_process_with_cli_args(mock_core_processor, mocker):
     # Mock the methods called by run() to avoid actual file operations
     processor._discover_files = mocker.MagicMock(return_value=[Path("file1.py")])
     processor._assemble_prompt = mocker.MagicMock(return_value=("Test prompt", 100))
-    processor.llm_api.process_llms = mocker.MagicMock(return_value=0.0)
     
+    # Mock LLMApi instantiation and its process_llms method
+    mock_llm_api_class = mocker.patch('np.core.LLMApi')
+    mock_llm_instance = mock_llm_api_class.return_value
+    mock_llm_instance.process_llms.return_value = 0.0 # Simulate cost
+
     # Run the processor
     processor.config.llms = ["mock-llm"] # Set LLMs in config to ensure process_llms is called
+    processor.config.api_key = "sk-or-mockkey" # Ensure API key is present
+    processor.config.task_definition = "A mock task to run." # Ensure task definition is not empty
+    processor.config.skip_confirmation = True # Bypass interactive confirmation
     processor.run()
     
     # Verify methods were called correctly
     processor.git_handler.process_git_repos.assert_called_once()
     processor._discover_files.assert_called_once()
     processor._assemble_prompt.assert_called_once()
-    processor.llm_api.process_llms.assert_called_once() 
+    mock_llm_instance.process_llms.assert_called_once()
+
+    # Check that output builder methods were called
+    # ... existing code ... 

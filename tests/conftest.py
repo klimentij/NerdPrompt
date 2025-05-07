@@ -76,18 +76,21 @@ def mock_git_handler(temp_project_dir, mock_config_manager, mock_output_builder,
 
 @pytest.fixture
 def mock_llm_api(temp_project_dir, mock_output_builder, mocker):
-     """ Mocks the LLMApi """
-     from np.llm_api import LLMApi
-     console_mock = mocker.MagicMock()
-     # Mock the executor and live display
-     mocker.patch('np.llm_api.ThreadPoolExecutor')
-     mocker.patch('np.llm_api.Live')
-     mocker.patch('np.llm_api.requests.post') # Mock requests directly if needed
-     api = LLMApi(api_key="sk-or-mockkey", output_builder=mock_output_builder, task_dir_path=temp_project_dir / "np_output/mock_task", console=console_mock)
-     return api
+    """ Mocks the LLMApi """
+    from np.llm_api import LLMApi
+    console_mock = mocker.MagicMock()
+    # Mock the executor and live display
+    mocker.patch('np.llm_api.ThreadPoolExecutor')
+    mocker.patch('np.llm_api.Live')
+    mocker.patch('np.llm_api.requests.post') # Mock requests directly if needed
+    # Ensure the mock task directory exists if LLMApi tries to use it
+    mock_task_dir = temp_project_dir / "np_output/mock_task"
+    mock_task_dir.mkdir(parents=True, exist_ok=True)
+    api = LLMApi(api_key="sk-or-mockkey", output_builder=mock_output_builder, task_dir_path=mock_task_dir, console=console_mock)
+    return api
 
 @pytest.fixture
-def mock_core_processor(temp_project_dir, mocker, mock_config_manager, mock_output_builder, mock_git_handler, mock_llm_api):
+def mock_core_processor(temp_project_dir, mocker, mock_config_manager, mock_output_builder, mock_git_handler):
      """ Mocks the CoreProcessor and its dependencies """
      from np.core import CoreProcessor
      from np.config import RunConfig
@@ -103,7 +106,6 @@ def mock_core_processor(temp_project_dir, mocker, mock_config_manager, mock_outp
          config_manager=mock_config_manager,
          output_builder=mock_output_builder,
          git_handler=mock_git_handler,
-         llm_api=mock_llm_api,
          console=console_mock
      )
      return processor 

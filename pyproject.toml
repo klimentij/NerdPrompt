@@ -38,8 +38,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/nerd-prompt" # Change this
-Repository = "https://github.com/yourusername/nerd-prompt" # Change this
+Homepage = "https://github.com/klimentij/NerdPrompt" # Change this
+Repository = "https://github.com/klimentij/NerdPrompt" # Change this
 
 [project.scripts]
 np = "np.__main__:app"

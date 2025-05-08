@@ -84,7 +84,7 @@ class LLMApi:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/yourusername/nerd-prompt", # Optional but good practice
+            "HTTP-Referer": "https://github.com/klimentij/NerdPrompt", # Optional but good practice
             "X-Title": "nerd-prompt", # Optional
         }
 

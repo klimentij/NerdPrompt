@@ -29,7 +29,7 @@ Ensure you have Python >= 3.9 and `pip` installed.
 # pip install nerd-prompt
 
 # Or, install directly from source:
-git clone https://github.com/yourusername/nerd-prompt.git # Replace with actual URL
+git clone https://github.com/klimentij/NerdPrompt.git # Replace with actual URL
 cd nerd-prompt
 pip install .
 # Or for development:

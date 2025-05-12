@@ -21,9 +21,16 @@ def pattern_matches_any(path: str, patterns: List[str]) -> bool:
     path = path.replace("\\", "/")  # Normalize path separators for matching
     
     for pattern in patterns:
-        # Handle directory patterns (ending with /)
-        if pattern.endswith('/'):
-            if path.startswith(pattern) or path == pattern[:-1]:
+        # Special handling for .git/ pattern specifically
+        if pattern == ".git/":
+            # Check for .git/ at any path level
+            if "/.git/" in path or path.startswith(".git/") or path == ".git":
+                return True
+        # Handle other directory patterns (ending with /)
+        elif pattern.endswith('/'):
+            pattern_no_slash = pattern[:-1]
+            # For regular directory patterns, only match from the start or exact match
+            if path == pattern_no_slash or path.startswith(pattern):
                 return True
         # Standard glob matching
         elif fnmatch.fnmatch(path, pattern):
@@ -120,7 +127,11 @@ class CoreProcessor:
                  if is_gitignored:
                      excluded_by_gitignore += 1
                      continue
-                 is_excluded = any(fnmatch.fnmatch(path_str, pat) or fnmatch.fnmatch(search_path.name, pat) for pat in effective_excludes)
+                 is_excluded = pattern_matches_any(path_str, effective_excludes)
+                 if not is_excluded:
+                     # Still check filename directly as a fallback
+                     is_excluded = any(fnmatch.fnmatch(search_path.name, pat) for pat in effective_excludes)
+                     
                  if is_excluded:
                      excluded_by_config += 1
                      continue
@@ -142,7 +153,13 @@ class CoreProcessor:
                          if is_gitignored:
                               excluded_by_gitignore += 1
                               continue
-                         is_excluded = any(fnmatch.fnmatch(path_str, pat) or fnmatch.fnmatch(item.name, pat) for pat in effective_excludes)
+                         
+                         # Check if this file is in a .git directory by checking its full path
+                         is_excluded = pattern_matches_any(path_str, effective_excludes)
+                         if not is_excluded:
+                             # Still check filename directly as a fallback for simple patterns
+                             is_excluded = any(fnmatch.fnmatch(item.name, pat) for pat in effective_excludes)
+                             
                          if is_excluded:
                               excluded_by_config += 1
                               continue
@@ -245,14 +262,34 @@ This section contains the primary instructions and current task to follow.
         # 3. Assemble Prompt & Estimate Tokens
         merged_prompt, estimated_tokens = self._assemble_prompt(included_files, self.config.task_definition)
 
-        # 3.5 Copy the prompt to clipboard immediately
+        # 3.5 Copy prompt to clipboard and save to file
+        output_base_dir = self.output_builder.output_dir # Correct attribute
+        last_prompt_file = output_base_dir / "last_prompt.md"
+        copied = False
+        saved = False
         try:
             pyperclip.copy(merged_prompt)
-            self.console.print(f"[green]Copied prompt to clipboard. You can paste it to other applications while waiting for the response.[/green]")
+            copied = True
         except pyperclip.PyperclipException as e:
             self.console.print(f"[yellow]Warning: Could not copy prompt to clipboard. {e}[/yellow]")
         except Exception as e:
             self.console.print(f"[red]Error copying prompt to clipboard: {e}[/red]")
+
+        try:
+            output_base_dir.mkdir(parents=True, exist_ok=True) # Ensure np_output exists
+            with open(last_prompt_file, 'w', encoding='utf-8') as f:
+                f.write(merged_prompt)
+            saved = True
+        except Exception as e:
+            self.console.print(f"[red]Error saving prompt to {last_prompt_file}: {e}[/red]")
+
+        if copied and saved:
+             self.console.print(f"[green]Copied prompt to clipboard and saved to [cyan]{last_prompt_file.relative_to(self.project_root)}[/cyan].[/green]")
+        elif copied:
+             self.console.print(f"[green]Copied prompt to clipboard.[/green] [yellow]Could not save to file.[/yellow]")
+        elif saved:
+             self.console.print(f"[green]Saved prompt to [cyan]{last_prompt_file.relative_to(self.project_root)}[/cyan].[/green] [yellow]Could not copy to clipboard.[/yellow]")
+
 
         # 4. Create Task Output Structure
         task_name_sanitized = sanitize_filename(self.config.task_name)

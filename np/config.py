@@ -23,7 +23,6 @@ DEFAULT_EXCLUDES = [
     "*.log",
     PROJECT_CONFIG_FILENAME,
     ".np_git_cache/", # Excluded for file discovery, not the repo itself
-    "np_output/", # Exclude the output dir from context gathering
     # Common image formats
     "*.png", "*.jpg", "*.jpeg", "*.gif", "*.svg", "*.webp", "*.ico", "*.bmp",
     # Other common artifacts
@@ -37,6 +36,7 @@ DEFAULT_EXCLUDES = [
     "dist/",
     "build/",
     "*.egg-info/",
+    "*np_output/last_prompt.md"
 ]
 
 # --- Dataclasses for Configuration ---

@@ -18,6 +18,19 @@ def test_pattern_matches_any():
     assert pattern_matches_any("docs/readme.md", patterns) is True
     assert pattern_matches_any("file.js", patterns) is False
     assert pattern_matches_any("data.txt", patterns) is False
+    
+    # Test .git/ specific patterns
+    git_patterns = [".git/"]
+    assert pattern_matches_any(".git/config", git_patterns) is True
+    assert pattern_matches_any(".git", git_patterns) is True
+    assert pattern_matches_any("project/.git/HEAD", git_patterns) is True
+    assert pattern_matches_any("repo1/sub/dir/.git/objects", git_patterns) is True
+    assert pattern_matches_any("something-git/file", git_patterns) is False
+    
+    # Test all default excludes
+    from np.config import DEFAULT_EXCLUDES
+    assert pattern_matches_any("repo/subdir/.git/config", DEFAULT_EXCLUDES) is True
+    assert pattern_matches_any("dir/.git/objects/pack/pack-123.pack", DEFAULT_EXCLUDES) is True
 
 def test_discover_files(mock_core_processor, temp_project_dir):
     """Test file discovery with various include/exclude patterns."""

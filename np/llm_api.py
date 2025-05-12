@@ -18,6 +18,7 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 REQUEST_TIMEOUT_SECONDS = 120 # Timeout for the HTTP request itself
 DEFAULT_TEMPERATURE = 1.0
 DEFAULT_API_TIMEOUT = 60 # Timeout parameter sent *to* OpenRouter
+OPENROUTER_GENERATION_URL = "https://openrouter.ai/api/v1/generation" # New endpoint URL
 
 # Structure to hold results/status for each model
 class ModelStatus:
@@ -31,6 +32,7 @@ class ModelStatus:
         self.future: Optional[Future] = None
         self.start_time = time.monotonic()
         self.end_time: Optional[float] = None
+        self.generation_id: Optional[str] = None # Store generation ID
 
     def get_display(self) -> str:
         elapsed = f" ({time.monotonic() - self.start_time:.1f}s)" if self.status not in ["Done", "Error", "Manual Input"] else ""
@@ -62,6 +64,7 @@ class LLMApi:
         self.max_workers = max_workers
         self._model_status: Dict[str, ModelStatus] = {}
         self._lock = threading.Lock() # To safely update shared status
+        self._generation_details_cache: Dict[str, Dict[str, Any]] = {} # Cache for /generation responses
 
     def _is_openrouter_model(self, model_name: str) -> bool:
         """ Basic heuristic to identify OpenRouter models. """
@@ -87,6 +90,9 @@ class LLMApi:
             "HTTP-Referer": "https://github.com/klimentij/NerdPrompt", # Optional but good practice
             "X-Title": "nerd-prompt", # Optional
         }
+        generation_headers = { # Headers for the GET /generation request
+            "Authorization": f"Bearer {self.api_key}",
+        }
 
         payload = {
             "model": model_name,
@@ -100,6 +106,8 @@ class LLMApi:
         response_content: Optional[str] = None
         error_msg: Optional[str] = None
         cost: float = 0.0
+        generation_id: Optional[str] = None
+        generation_details: Optional[Dict[str, Any]] = None
 
         try:
             with self._lock:
@@ -117,59 +125,142 @@ class LLMApi:
             response_content = data.get("choices", [{}])[0].get("message", {}).get("content")
             if not response_content:
                  error_msg = "Error: Received empty content from API."
-
-            # --- Extract Cost and Usage (Based on actual OpenRouter response structure) ---
-            # OpenRouter current response format includes direct token counts and usage info
-            tokens_completion = data.get("tokens_completion", 0)
-            tokens_prompt = data.get("tokens_prompt", 0)
-            total_tokens = tokens_prompt + tokens_completion
-
-            # For backward compatibility, also check usage object if present
-            usage = data.get("usage", {})
-            if not tokens_completion and isinstance(usage, dict):
-                tokens_prompt = usage.get("prompt_tokens", 0)
-                tokens_completion = usage.get("completion_tokens", 0) 
-                total_tokens = usage.get("total_tokens", 0) or (tokens_prompt + tokens_completion)
-
-            # Calculate actual usage cost - OpenRouter returns usage value when using paid models
-            usage_value = data.get("usage", 0)
-            # Check if usage is a dictionary and not a numeric value
-            if isinstance(usage_value, dict):
-                # If it's a dictionary, we use 0 as the cost and extract token counts from it
-                cost = 0
-                # No need to reassign usage since we already checked it's a dict
-            else:
-                # If usage is a number, use it directly as the cost
-                cost = float(usage_value) if usage_value else 0
+                 # Still try to get generation ID and cost if possible
             
-            # Only apply token-based cost estimate if no usage provided AND it's not a free model
-            # We check model name or free indicator from API response
-            is_free_model = "free" in model_name.lower() or model_name.endswith(":free") or cost == 0
-            if cost == 0 and total_tokens and not is_free_model:
-                # This is just an estimate - actual costs vary by model
-                cost = total_tokens * 0.000001  # $0.000001 per token as placeholder
+            # Attempt to get generation ID from the primary response
+            # Check common locations for generation ID
+            generation_id = data.get("id") # Sometimes it's just 'id'
+            if not generation_id and isinstance(data.get("usage"), dict):
+                generation_id = data["usage"].get("generation_id") # Check inside usage dict
+            # Add other potential locations if needed based on API variations
 
-            # Append model information and token usage to response if available
-            model_info = data.get("model", "")
-            if not model_info:
-                # Sometimes model info is in a different location
-                provider_name = data.get("provider_name", "")
-                model_name_from_resp = data.get("model", "")
-                if provider_name and model_name_from_resp:
-                    model_info = f"{provider_name}/{model_name_from_resp}"
+            # Store generation ID if found
+            if generation_id:
+                with self._lock:
+                    self._model_status[status_key].generation_id = generation_id
+
+
+            # --- Fetch Generation Details for Cost ---
+            if generation_id:
+                try:
+                    with self._lock:
+                        self._model_status[status_key].status = "Fetching cost..."
+                    
+                    # Check cache first
+                    cached_details = self._generation_details_cache.get(generation_id)
+                    if cached_details:
+                         generation_details = cached_details
+                    else:
+                        # Allow retries for fetching generation details
+                        max_retries = 3
+                        retry_delay = 1 # Start with 1 second delay
+                        for attempt in range(max_retries):
+                            gen_response = requests.get(
+                                OPENROUTER_GENERATION_URL,
+                                headers=generation_headers,
+                                params={"id": generation_id},
+                                timeout=REQUEST_TIMEOUT_SECONDS / 2 # Shorter timeout for this call
+                            )
+                            if gen_response.status_code == 200:
+                                generation_details = gen_response.json().get("data")
+                                if generation_details:
+                                     # Cache the result
+                                     self._generation_details_cache[generation_id] = generation_details
+                                     break # Success
+                                else: 
+                                     # Handle case where 'data' key is missing or empty
+                                     error_msg = f"Error: Received empty 'data' from /generation endpoint for ID {generation_id}."
+                                     break 
+                            elif gen_response.status_code == 404 and attempt < max_retries - 1:
+                                # Generation might not be ready yet, retry after delay
+                                time.sleep(retry_delay)
+                                retry_delay *= 2 # Exponential backoff
+                                continue
+                            else:
+                                # Raise error for non-404 or final retry failure
+                                gen_response.raise_for_status()
+                        
+                        if not generation_details and not error_msg:
+                            error_msg = f"Error: Failed to retrieve generation details for ID {generation_id} after {max_retries} attempts."
+
+
+                except requests.exceptions.Timeout:
+                    error_msg = f"Error: Timeout fetching cost details for ID {generation_id}."
+                except requests.exceptions.RequestException as e:
+                     # Append to existing error or set new one
+                     gen_error = f"Error fetching cost details for ID {generation_id}: {e}"
+                     error_msg = f"{error_msg}\\n{gen_error}" if error_msg else gen_error
+                except Exception as e:
+                     gen_error = f"Unexpected error fetching cost details for ID {generation_id}: {e}"
+                     error_msg = f"{error_msg}\\n{gen_error}" if error_msg else gen_error
+
+
+            # --- Extract Cost and Usage from Generation Details (if fetched) ---
+            tokens_prompt = 0
+            total_tokens = 0
+            model_info = ""
+            provider_name = ""
+            generation_time_ms = None
+            latency_ms = None
+            finish_reason = ""
+            native_tokens_prompt = 0
+            native_tokens_completion = 0
+
+            if generation_details:
+                 cost = float(generation_details.get("usage") or generation_details.get("total_cost", 0.0))
+                 tokens_prompt = generation_details.get("tokens_prompt", 0)
+                 tokens_completion = generation_details.get("tokens_completion", 0)
+                 total_tokens = tokens_prompt + tokens_completion # Recalculate for safety
+                 model_info = generation_details.get("model", model_name) # Use model from details if available
+                 provider_name = generation_details.get("provider_name", "")
+                 generation_time_ms = generation_details.get("generation_time")
+                 latency_ms = generation_details.get("latency")
+                 finish_reason = generation_details.get("finish_reason", "")
+                 native_tokens_prompt = generation_details.get("native_tokens_prompt", 0)
+                 native_tokens_completion = generation_details.get("native_tokens_completion", 0)
+            else:
+                 # Fallback if generation details couldn't be fetched but we have response_content
+                 cost = 0.0 # Can't determine cost accurately
+                 model_info = model_name # Use the requested model name
+                 # Maybe try to extract tokens from the initial response as a last resort?
+                 usage_initial = data.get("usage", {})
+                 if isinstance(usage_initial, dict):
+                     tokens_prompt = usage_initial.get("prompt_tokens", 0)
+                     tokens_completion = usage_initial.get("completion_tokens", 0)
+                     total_tokens = usage_initial.get("total_tokens", 0) or (tokens_prompt + tokens_completion)
+
+
 
             # Create usage information markdown to append to response
             usage_info = []
             if model_info:
                 usage_info.append(f"**Model:** {model_info}")
+            if provider_name:
+                 usage_info.append(f"**Provider:** {provider_name}")
             if tokens_prompt:
                 usage_info.append(f"**Prompt tokens:** {tokens_prompt}")
             if tokens_completion:
                 usage_info.append(f"**Completion tokens:** {tokens_completion}")
             if total_tokens:
                 usage_info.append(f"**Total tokens:** {total_tokens}")
-            if cost:
+            if native_tokens_prompt:
+                 usage_info.append(f"**Native Prompt Tokens:** {native_tokens_prompt}")
+            if native_tokens_completion:
+                 usage_info.append(f"**Native Completion Tokens:** {native_tokens_completion}")
+            if cost > 0: # Only show cost if it's definitively known and > 0
                 usage_info.append(f"**Cost:** ${cost:.6f}")
+            elif generation_id and not generation_details and not error_msg:
+                usage_info.append(f"**Cost:** [yellow]Unknown (Failed to fetch details)[/yellow]")
+            elif not generation_id:
+                 usage_info.append(f"**Cost:** [yellow]Unknown (Could not get generation ID)[/yellow]")
+
+            # Add timing and finish reason if available
+            if generation_time_ms is not None:
+                 usage_info.append(f"**Generation Time:** {generation_time_ms} ms")
+            if latency_ms is not None:
+                 usage_info.append(f"**Latency (TTFT):** {latency_ms} ms") # TTFT = Time To First Token
+            if finish_reason:
+                 usage_info.append(f"**Finish Reason:** {finish_reason}")
 
             # Append usage information to response if we have any
             if usage_info and response_content:
@@ -195,7 +286,7 @@ class LLMApi:
         with self._lock:
             status_obj = self._model_status[status_key]
             status_obj.end_time = time.monotonic()
-            status_obj.cost = cost # Store calculated cost
+            status_obj.cost = cost # Store calculated/fetched cost
             if error_msg:
                 status_obj.status = "Error"
                 status_obj.error_message = error_msg
@@ -237,63 +328,82 @@ class LLMApi:
         Displays live status updates using Rich. Writes results to files.
         Returns the total calculated cost.
         """
-        self._model_status = {}
-        openrouter_tasks = []
+        self._model_status.clear()
+        futures: Dict[str, Future] = {}
+        self._generation_details_cache.clear() # Clear cache for new run
 
-        # Initialize status for all models
+        # Initialize status for each model
         for name in llm_names:
             is_or = self._is_openrouter_model(name)
             self._model_status[name] = ModelStatus(name, is_or)
-            if is_or:
-                openrouter_tasks.append(name)
-            else:
-                # Set final status for manual models immediately
-                self._model_status[name].status = "Manual Input"
-                self._model_status[name].end_time = time.monotonic()
 
-
-        if not openrouter_tasks:
-            self.console.print("[yellow]No OpenRouter models selected. Skipping API calls.[/yellow]")
-            # Display final table once
-            self.console.print(self._generate_status_table())
-            return 0.0 # No cost
-
-        if not self.api_key:
-             self.console.print("[yellow]OpenRouter API Key not found or provided. Skipping API calls.[/yellow]")
-             # Mark all OR models as error
-             for name in openrouter_tasks:
-                  self._model_status[name].status = "Error"
-                  self._model_status[name].error_message = "API Key not configured."
-                  self._model_status[name].end_time = time.monotonic()
-                  self.output_builder.write_llm_response(
-                       self.task_dir_path, name, self._model_status[name].result_content or "# Error: API Key missing"
-                  )
-             self.console.print(self._generate_status_table())
-             return 0.0
-
-        # Use ThreadPoolExecutor for parallel requests
+        # --- Use ThreadPoolExecutor for concurrent requests ---
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit tasks
-            for model_name in openrouter_tasks:
-                overrides = model_overrides.get(model_name, {})
-                future = executor.submit(self._send_request, model_name, merged_prompt, overrides)
-                self._model_status[model_name].future = future
+            for name in llm_names:
+                status = self._model_status[name]
+                overrides = model_overrides.get(name, {})
+                if status.is_openrouter:
+                    status.status = "Queued..."
+                    # Submit API call task
+                    future = executor.submit(self._send_request, name, merged_prompt, overrides)
+                    status.future = future
+                    futures[name] = future
+                else:
+                    # Handle non-OpenRouter (manual input) models immediately
+                    status.status = "Manual Input"
+                    status.end_time = time.monotonic() # Mark as 'finished' for status display
+                    # We don't add non-OR models to futures dict
 
-            # Display live updates
-            with Live(self._generate_status_table(), console=self.console, refresh_per_second=4, transient=False) as live:
-                active_futures = len(openrouter_tasks)
-                while active_futures > 0:
-                    active_futures = 0
-                    with self._lock:
-                         for status in self._model_status.values():
-                              if status.is_openrouter and status.end_time is None:
-                                   active_futures += 1
+            # --- Live Status Update ---
+            table = self._generate_status_table()
+            total_llms = len(llm_names)
+            completed_llms = total_llms - len(futures) # Start with non-OR models completed
+
+            with Live(table, console=self.console, refresh_per_second=4, vertical_overflow="visible") as live:
+                while completed_llms < total_llms:
+                    done_count = 0
+                    for name, fut in futures.items():
+                        if fut.done():
+                            done_count +=1
+                            # Process result/exception immediately after completion if needed (optional)
+                            try:
+                                fut.result() # Call result() to raise exceptions if any occurred in the thread
+                            except Exception as e:
+                                # Error should have been logged within _send_request and status updated
+                                # self.console.print(f"Error in future for {name}: {e}") # Optional: re-log
+                                pass # Error is handled and stored in ModelStatus
+
+                    newly_completed = done_count - (completed_llms - (total_llms - len(futures)) ) # Calculate newly done futures
+                    completed_llms += newly_completed
+
+                    # Update table and refresh live display
                     live.update(self._generate_status_table())
-                    time.sleep(0.1) # Prevent busy-waiting
+                    time.sleep(0.1) # Short sleep to prevent busy-waiting
 
-        # Final table update after loop finishes (optional, Live usually shows final state)
-        # self.console.print(self._generate_status_table())
 
-        # Calculate total cost
-        total_cost = sum(status.cost for status in self._model_status.values())
+        # --- Process and Save Results ---
+        total_cost = 0.0
+        self.console.print("\nProcessing complete.")
+        for name, status in self._model_status.items():
+            if status.status == "Done" and status.result_content:
+                self.output_builder.write_llm_response(
+                     task_dir_path=self.task_dir_path,
+                     llm_name=status.name,
+                     content=status.result_content
+                 )
+                total_cost += status.cost
+            elif status.status == "Error":
+                self.console.print(f"[bold red]Error for {name}:[/] {status.error_message}")
+                if status.result_content: # Check if error content was generated
+                     self.output_builder.write_llm_response(
+                         task_dir_path=self.task_dir_path,
+                         llm_name=status.name,
+                         content=status.result_content
+                     )
+            elif status.status == "Manual Input":
+                # Manual input handling (if any) would happen elsewhere or be initiated here
+                pass
+
+
+        self.console.print(f"Total estimated cost: ${total_cost:.6f}")
         return total_cost 

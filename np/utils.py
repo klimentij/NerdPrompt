@@ -2,6 +2,7 @@ import re
 import os
 import unicodedata
 from pathlib import Path
+from typing import List, Optional, Tuple, Dict, Any
 
 def sanitize_filename(name: str, max_length: int = 100) -> str:
     """
@@ -66,15 +67,38 @@ def estimate_tokens(text: str, chars_per_token: float = 4.0) -> int:
 def parse_git_url(url: str) -> tuple[str, str | None]:
     """
     Parses a Git URL to extract the base repository URL and an optional branch name.
-    Handles common formats like url#branch or url (uses default branch).
+    Handles common formats like:
+    - url#branch
+    - url (uses default branch)
+    - https://github.com/user/repo/tree/branch/... (extracts 'branch')
+    - git@github.com:user/repo.git#branch
     """
+    # Regex to capture branch name from /tree/branch/ pattern, avoiding parts like .git/tree/
+    tree_match = re.search(r'/(?:tree|commits)/([^/]+)', url)
+    base_url = url
+    branch = None
+
     if '#' in url:
         parts = url.split('#', 1)
-        return parts[0], parts[1]
-    else:
-        # For URLs without #branch, assume default branch (represented as None)
-        # The git commands will handle fetching the default branch.
-        return url, None
+        base_url = parts[0]
+        branch = parts[1]
+        # Remove /tree/ part if #branch is also present (which takes precedence)
+        base_url = re.sub(r'/tree/[^/]+/?', '/', base_url)
+        base_url = re.sub(r'/commits/[^/]+/?', '/', base_url)
+
+    elif tree_match:
+        branch = tree_match.group(1)
+        # Remove the /tree/branch part from the base URL
+        base_url = url[:tree_match.start()] + url[tree_match.end():]
+        # Ensure trailing slashes are handled correctly after removal
+        base_url = base_url.rstrip('/')
+
+    # Remove trailing '.git' if it exists, but only if not part of the core domain/path
+    # (Avoid changing git@server:path/.git to git@server:path)
+    if base_url.endswith('.git') and '/' in base_url: # Check for '/' to avoid mangling scp-like syntax
+         base_url = base_url[:-4]
+
+    return base_url, branch
 
 def format_git_source_for_task_md(
     url: str, branch: str | None, commit_hash: str, local_path: Path, project_root: Path

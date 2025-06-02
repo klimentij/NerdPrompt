@@ -1,34 +1,54 @@
-# NerdPrompt: Your AI-Powered Coding Assistant
+# NerdPrompt: Context Compiler for Long-Context LLMs
 
-**Context Assembler & LLM Interaction CLI**
+**Automated Context Assembly & LLM Interaction CLI**
 
-`NerdPrompt` (np) is a Python command-line tool designed for developers to streamline the process of:
+`NerdPrompt` (np) is a Python command-line tool that automates the compilation of extensive context from multiple sources for use with long-context Large Language Models. It's designed to harness the power of modern LLMs that can handle massive context windows by intelligently gathering and organizing relevant information from:
 
-1.  **Gathering Context:** Collecting relevant information from local project files, directories, and remote Git repositories.
-2.  **Defining Tasks:** Clearly specifying instructions for a Large Language Model (LLM).
-3.  **LLM Interaction (Optional):** Sending the combined context and task to LLMs via OpenRouter (supporting parallel requests).
-4.  **Organizing Results:** Systematically storing the task definition, LLM responses (or placeholders for manual input), and referenced Git repositories within your project structure.
+1.  **Multiple Repositories:** Query across several Git repositories simultaneously
+2.  **Entire Project Codebases:** Include all relevant local project files at once
+3.  **Project Documentation:** Aggregate discussions, notes, and documentation for comprehensive brainstorming
+4.  **Mixed Sources:** Combine local files, remote repositories, and specific documents
 
-It aims to provide an elegant, efficient, and **vendor-lock-in-free** workflow for leveraging LLMs with complex project contexts.
+The tool automatically copies the assembled prompt to your clipboard, making it incredibly easy to paste into free LLM interfaces like Google AI Studio, ChatGPT, Claude, or any other LLM UI of your choice.
+
+## Motivation
+
+NerdPrompt was born out of frustration with manually assembling context for complex projects every single time. When working on sophisticated coding tasks or documentation generation, I found myself constantly copy-pasting files, notes, discussions, and email threads - wanting LLMs to have the complete picture to provide truly valuable answers.
+
+The breaking point came when I needed to use entire repositories or multiple repos as context for complex tasks. Manually gathering all this information was tedious, error-prone, and time-consuming. I wanted a **vendor-lock-free approach** that I could control completely, while ensuring my compiled contexts were stored locally in clean, organized folder structures that could easily be committed to GitHub for future reference.
+
+For the most complex questions, I often need to consult multiple LLMs - sending the same comprehensive context to several models via OpenRouter API, pasting into various web interfaces like AI Studio, then comparing their responses or using them as intermediate steps for compiling final answers. I wanted a tool that would streamline this entire workflow, from context compilation to multi-LLM consultation, while keeping everything organized and reusable for future iterations.
+
+NerdPrompt eliminates the manual drudgery and lets me focus on asking the right questions with the right context.
 
 ## Key Features
 
-*   **Intelligent Context Assembly:** Automatically gathers relevant code and files.
-*   **Flexible LLM Integration:** Works with OpenRouter models or manual placeholders.
-*   **Interactive & Non-Interactive Modes:** Use guided setup or direct CLI commands.
-*   **Stateful Project Configuration:** Remembers your preferences for faster subsequent runs.
-*   **Reproducible Git Handling:** Tracks exact commit hashes for context consistency.
-*   **Organized Output:** Saves prompts, responses, and task details in a structured way.
-*   **Clipboard Integration:** Automatically copies prompts and responses for easy use elsewhere.
+*   **Long-Context Optimization:** Designed specifically for LLMs with large context windows (100K+ tokens)
+*   **Multi-Repository Context:** Query multiple Git repositories in a single prompt
+*   **Comprehensive File Inclusion:** Easily include entire project codebases with smart filtering
+*   **Automatic Clipboard Integration:** Prompts and responses auto-copied for seamless use with any LLM UI
+*   **Flexible LLM Integration:** Works with OpenRouter APIs or generates prompts for manual use
+*   **Stateful Project Configuration:** Remembers your preferences for faster subsequent runs
+*   **Reproducible Git Handling:** Tracks exact commit hashes for context consistency
+*   **Organized Output:** Saves prompts, responses, and task details in a structured way
+
+## Main Use Cases
+
+*   **Cross-Repository Analysis:** Ask questions that span multiple codebases or projects
+*   **Comprehensive Code Review:** Include entire project context for thorough analysis
+*   **Architecture Planning:** Use all project discussions, documentation, and code for system design
+*   **Knowledge Synthesis:** Combine multiple sources of information for brainstorming and decision-making
+*   **Legacy Code Understanding:** Gather complete context from large, complex codebases
+*   **Documentation Generation:** Include all relevant code and notes for comprehensive documentation
 
 ## Core Philosophy
 
-*   **Simplicity & Elegance:** Intuitive interface, minimal friction.
-*   **Developer Experience:** Clear feedback (`rich` powered), cross-platform (macOS, Linux, Windows).
-*   **Code Quality:** Exemplary, readable, maintainable, testable Python code.
-*   **Flexibility:** Mix local/Git sources, use OpenRouter models or manual placeholders.
-*   **Statefulness:** Remembers project preferences (`.npconfig.toml`).
-*   **Reproducibility:** Tracks the exact state of Git repositories used.
+*   **Maximum Context Utilization:** Leverage the full potential of long-context LLMs
+*   **Frictionless Workflow:** One command to gather context from multiple complex sources
+*   **Universal LLM Compatibility:** Works with any LLM interface through clipboard integration
+*   **Developer Experience:** Clear feedback (`rich` powered), cross-platform (macOS, Linux, Windows)
+*   **Flexibility:** Mix local/Git sources, use OpenRouter models or manual placeholders
+*   **Reproducibility:** Tracks the exact state of all included sources
 
 ## Installation
 

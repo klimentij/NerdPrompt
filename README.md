@@ -1,8 +1,8 @@
-# nerd-prompt (`np`)
+# NerdPrompt: Your AI-Powered Coding Assistant
 
 **Context Assembler & LLM Interaction CLI**
 
-`nerd-prompt` is a Python command-line tool designed for developers to streamline the process of:
+`NerdPrompt` (np) is a Python command-line tool designed for developers to streamline the process of:
 
 1.  **Gathering Context:** Collecting relevant information from local project files, directories, and remote Git repositories.
 2.  **Defining Tasks:** Clearly specifying instructions for a Large Language Model (LLM).
@@ -10,6 +10,16 @@
 4.  **Organizing Results:** Systematically storing the task definition, LLM responses (or placeholders for manual input), and referenced Git repositories within your project structure.
 
 It aims to provide an elegant, efficient, and **vendor-lock-in-free** workflow for leveraging LLMs with complex project contexts.
+
+## Key Features
+
+*   **Intelligent Context Assembly:** Automatically gathers relevant code and files.
+*   **Flexible LLM Integration:** Works with OpenRouter models or manual placeholders.
+*   **Interactive & Non-Interactive Modes:** Use guided setup or direct CLI commands.
+*   **Stateful Project Configuration:** Remembers your preferences for faster subsequent runs.
+*   **Reproducible Git Handling:** Tracks exact commit hashes for context consistency.
+*   **Organized Output:** Saves prompts, responses, and task details in a structured way.
+*   **Clipboard Integration:** Automatically copies prompts and responses for easy use elsewhere.
 
 ## Core Philosophy
 
@@ -30,7 +40,7 @@ Ensure you have Python >= 3.9 and `pip` installed.
 
 # Or, install directly from source:
 git clone https://github.com/klimentij/NerdPrompt.git # Replace with actual URL
-cd nerd-prompt
+cd NerdPrompt
 pip install .
 # Or for development:
 # pip install -e .[dev] # If you define a [dev] extra in pyproject.toml for test deps
@@ -40,7 +50,7 @@ You also need `git` installed and available in your system's PATH for Git reposi
 
 ## Usage
 
-`nerd-prompt` operates in two modes:
+`NerdPrompt` operates in two modes:
 
 ### 1. Interactive Mode
 
@@ -50,7 +60,13 @@ Simply navigate to your project's root directory in your terminal and run:
 np
 ```
 
-This will launch a guided setup process using interactive prompts (`questionary`) to configure:
+This will launch a guided setup process using interactive prompts (`questionary`) to configure your task.
+
+**Screenshot of Interactive Mode:**
+
+![Interactive Mode Setup](img/t1.png)
+
+The interactive setup helps you configure:
 
 *   **Sources:** Which files, directories (using globs), or Git repository URLs to include/exclude. Defaults are loaded from `.npconfig.toml` if it exists. `.gitignore` patterns are always respected.
 *   **LLMs:** A space-separated list of target LLM names.
@@ -63,6 +79,10 @@ This will launch a guided setup process using interactive prompts (`questionary`
 *   **Advanced Settings (Optional):** Manage your OpenRouter API key globally or set model-specific parameters (like `temperature`).
 
 Your preferences for includes, excludes, LLMs, the last task name, and parameter overrides are saved to `.npconfig.toml` in your project directory for future runs.
+
+**Screenshot of Task Execution:**
+
+![Task Execution Summary](img/t2.png)
 
 ### 2. Non-Interactive Mode
 
@@ -167,10 +187,6 @@ your-project/
 ## Token Estimation
 
 Token counts are *estimated* based on the total character count of the assembled prompt using an approximate ratio (default: 4.0 characters/token). This is fast but not exact. The estimate is displayed and included in `_task.md`.
-
-## Contributing
-
-(Add contribution guidelines if you open-source the project)
 
 ## License
 

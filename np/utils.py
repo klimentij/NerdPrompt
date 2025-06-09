@@ -93,10 +93,13 @@ def parse_git_url(url: str) -> tuple[str, str | None]:
         # Ensure trailing slashes are handled correctly after removal
         base_url = base_url.rstrip('/')
 
-    # Remove trailing '.git' if it exists, but only if not part of the core domain/path
-    # (Avoid changing git@server:path/.git to git@server:path)
-    if base_url.endswith('.git') and '/' in base_url: # Check for '/' to avoid mangling scp-like syntax
-         base_url = base_url[:-4]
+    # Historically this function attempted to strip a trailing ``.git``
+    # suffix from the repository URL.  However the rest of the codebase
+    # (and accompanying tests) expect the URL to remain unchanged.  In
+    # particular ``GitHandler`` relies on the suffix when generating a
+    # unique key for each repository.  Removing ``.git`` here would cause
+    # mismatches between saved mappings and parsed URLs.  Therefore the
+    # URL is returned as-is and no stripping is performed.
 
     return base_url, branch
 

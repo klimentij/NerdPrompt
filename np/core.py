@@ -1,25 +1,24 @@
 import fnmatch
-import os
-import sys
 from pathlib import Path
-from typing import List, Dict, Any, Tuple, Optional, Set
+from typing import Dict, List, Tuple
 
-import pyperclip # type: ignore
+import pyperclip  # type: ignore
 from rich.console import Console
 from rich.panel import Panel
 
-from .config import RunConfig, ConfigManager, ProjectState, DEFAULT_EXCLUDES
+from .config import DEFAULT_EXCLUDES, ConfigManager, RunConfig
 from .git_handler import GitHandler
-from .output_builder import OutputBuilder
 from .llm_api import LLMApi
+from .output_builder import OutputBuilder
 from .utils import estimate_tokens, get_relative_path, sanitize_filename
+
 
 def pattern_matches_any(path: str, patterns: List[str]) -> bool:
     """
     Check if a given path matches any of the provided glob patterns.
     """
     path = path.replace("\\", "/")  # Normalize path separators for matching
-    
+
     for pattern in patterns:
         # Special handling for .git/ pattern specifically
         if pattern == ".git/":
@@ -131,7 +130,7 @@ class CoreProcessor:
                  if not is_excluded:
                      # Still check filename directly as a fallback
                      is_excluded = any(fnmatch.fnmatch(search_path.name, pat) for pat in effective_excludes)
-                     
+
                  if is_excluded:
                      excluded_by_config += 1
                      continue
@@ -153,13 +152,13 @@ class CoreProcessor:
                          if is_gitignored:
                               excluded_by_gitignore += 1
                               continue
-                         
+
                          # Check if this file is in a .git directory by checking its full path
                          is_excluded = pattern_matches_any(path_str, effective_excludes)
                          if not is_excluded:
                              # Still check filename directly as a fallback for simple patterns
                              is_excluded = any(fnmatch.fnmatch(item.name, pat) for pat in effective_excludes)
-                             
+
                          if is_excluded:
                               excluded_by_config += 1
                               continue
@@ -177,11 +176,12 @@ class CoreProcessor:
 
         return sorted(list(included_files))
 
-    def _assemble_prompt(self, included_files: List[Path], task_definition: str) -> Tuple[str, int]:
-        """ Reads files, assembles the prompt string, returns (prompt, estimated_tokens). """
+    def _assemble_prompt(self, included_files: List[Path], task_definition: str) -> Tuple[str, int, Dict[str, int]]:
+        """Reads files, assembles the prompt string and returns prompt, token estimate, and token usage per folder."""
         self.console.print("[blue]Assembling prompt content...[/blue]")
         prompt_parts = []
         total_chars = 0
+        folder_tokens: Dict[str, int] = {}
 
         # Add file contents
         for file_path in included_files:
@@ -189,12 +189,14 @@ class CoreProcessor:
             path_str = str(relative_path).replace('\\', '/')
             header = f"## Source: {path_str}\n\n"
             try:
-                with open(file_path, 'r', encoding='utf-8', errors='replace') as infile:
+                with file_path.open(encoding="utf-8", errors="replace") as infile:
                     content = infile.read()
                 prompt_parts.append(header)
                 prompt_parts.append(content)
                 prompt_parts.append("\n\n---\n\n")
                 total_chars += len(header) + len(content) + len("\n\n---\n\n")
+                tokens_this_file = estimate_tokens(content)
+                folder_tokens[str(relative_path.parent)] = folder_tokens.get(str(relative_path.parent), 0) + tokens_this_file
             except Exception as e:
                 error_msg = f"Error reading {relative_path}: {e}"
                 prompt_parts.append(header)
@@ -234,7 +236,56 @@ This section contains the primary instructions and current task to follow.
         estimated_toks = estimate_tokens(final_prompt) # Estimate based on final combined content
 
         self.console.print(f"Prompt assembled. Total characters: {total_chars}, Estimated tokens: ~{estimated_toks}")
-        return final_prompt, estimated_toks
+        return final_prompt, estimated_toks, folder_tokens
+
+    def _preview_context(self, estimated_tokens: int, folder_tokens: Dict[str, int]) -> str:
+        """Display token summary and ask user how to proceed.
+
+        Returns one of "proceed", "update", or "cancel"."""
+        try:
+            import questionary
+            from rich.table import Table
+        except Exception:
+            self.console.print("[red]Interactive prompts unavailable.[/red]")
+            return "proceed"
+
+        custom_style = questionary.Style([
+            ('qmark', 'fg:#673ab7 bold'),
+            ('question', 'bold'),
+            ('answer', 'fg:#ff5722 bold'),
+            ('pointer', 'fg:#673ab7 bold'),
+            ('highlighted', 'fg:#673ab7 bold'),
+            ('selected', 'fg:#cc5454'),
+            ('separator', 'fg:#cc5454'),
+            ('instruction', ''),
+            ('text', ''),
+            ('disabled', 'fg:#858585 italic')
+        ])
+
+        self.console.print(Panel(f"Estimated tokens for prompt: ~{estimated_tokens}", title="Token Estimate", expand=False))
+
+        while True:
+            action = questionary.select(
+                "Continue with these context files?",
+                choices=[
+                    questionary.Choice("Proceed", "proceed"),
+                    questionary.Choice("More Info", "more"),
+                    questionary.Choice("Update Context", "update"),
+                    questionary.Choice("Cancel", "cancel")
+                ],
+                style=custom_style
+            ).ask()
+
+            if action == "more":
+                table = Table(title="Top Token Folders", show_header=True, header_style="bold magenta")
+                table.add_column("Folder", style="red")
+                table.add_column("~Tokens", justify="right")
+                for folder, toks in sorted(folder_tokens.items(), key=lambda x: x[1], reverse=True)[:5]:
+                    table.add_row(folder or ".", str(toks))
+                self.console.print(table)
+                continue
+
+            return action or "cancel"
 
     def run(self) -> None:
         """ Executes the core processing workflow. """
@@ -259,8 +310,24 @@ This section contains the primary instructions and current task to follow.
             effective_excludes=effective_excludes
         )
 
-        # 3. Assemble Prompt & Estimate Tokens
-        merged_prompt, estimated_tokens = self._assemble_prompt(included_files, self.config.task_definition)
+        while True:
+            # 3. Assemble Prompt & Estimate Tokens
+            merged_prompt, estimated_tokens, folder_tokens = self._assemble_prompt(included_files, self.config.task_definition)
+
+            if not self.config.skip_confirmation:
+                action = self._preview_context(estimated_tokens, folder_tokens)
+                if action == "update":
+                    included_files = self._discover_files(
+                        source_paths=git_source_paths,
+                        gitignore_patterns=gitignore_patterns,
+                        effective_includes=self.config.includes,
+                        effective_excludes=effective_excludes
+                    )
+                    continue
+                elif action == "cancel":
+                    self.console.print("[yellow]Operation cancelled by user.[/yellow]")
+                    return
+            break
 
         # 3.5 Copy prompt to clipboard and save to file
         output_base_dir = self.output_builder.output_dir # Correct attribute
@@ -277,7 +344,7 @@ This section contains the primary instructions and current task to follow.
 
         try:
             output_base_dir.mkdir(parents=True, exist_ok=True) # Ensure np_output exists
-            with open(last_prompt_file, 'w', encoding='utf-8') as f:
+            with last_prompt_file.open('w', encoding='utf-8') as f:
                 f.write(merged_prompt)
             saved = True
         except Exception as e:
@@ -286,14 +353,13 @@ This section contains the primary instructions and current task to follow.
         if copied and saved:
              self.console.print(f"[green]Copied prompt to clipboard and saved to [cyan]{last_prompt_file.relative_to(self.project_root)}[/cyan].[/green]")
         elif copied:
-             self.console.print(f"[green]Copied prompt to clipboard.[/green] [yellow]Could not save to file.[/yellow]")
+             self.console.print("[green]Copied prompt to clipboard.[/green] [yellow]Could not save to file.[/yellow]")
         elif saved:
              self.console.print(f"[green]Saved prompt to [cyan]{last_prompt_file.relative_to(self.project_root)}[/cyan].[/green] [yellow]Could not copy to clipboard.[/yellow]")
 
 
         # 4. Create Task Output Structure
         task_name_sanitized = sanitize_filename(self.config.task_name)
-        
         task_dir_path = self.output_builder.create_task_output_structure(
             task_number_str=self.output_builder.get_next_folder_number()[1],
             task_name_sanitized=task_name_sanitized,
@@ -320,10 +386,11 @@ This section contains the primary instructions and current task to follow.
             self.console.print("[yellow]Warning: Task definition is empty. Skipping LLM processing.[/yellow]")
         else:
             if not self.config.skip_confirmation:
-                self.console.print(Panel(f"Estimated tokens for prompt: ~{estimated_tokens}", title="Token Estimate", expand=False))
                 if not self.config_manager.confirm_proceed(f"Proceed with sending to {len(self.config.llms)} LLM(s)?"):
                     self.console.print("[yellow]Operation cancelled by user.[/yellow]")
                     return
+            else:
+                self.console.print(Panel(f"Estimated tokens for prompt: ~{estimated_tokens}", title="Token Estimate", expand=False))
 
             total_cost = llm_api.process_llms(
                 llm_names=self.config.llms,
@@ -333,4 +400,5 @@ This section contains the primary instructions and current task to follow.
             self.console.print(f"[green]LLM processing complete. Total estimated cost: ${total_cost:.6f}[/green]")
 
         self.console.print(f"[bold green]Nerd Prompt task '{self.config.task_name}' finished.[/bold green]")
-        self.console.print(f"Output written to: [cyan]{task_dir_path.relative_to(self.project_root)}[/cyan]") 
+        self.console.print(f"Output written to: [cyan]{task_dir_path.relative_to(self.project_root)}[/cyan]")
+
